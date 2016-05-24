@@ -20,3 +20,7 @@ BCE is a compressor for stationary data. It uses an algorithm described at http:
     cd build
     cmake -DCMAKE_BUILD_TYPE=Release ..
     make
+
+**Dependings:**
+
+    libdivsufsort - See https://github.com/y-256/libdivsufsort
