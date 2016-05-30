@@ -1482,6 +1482,6 @@ int main(int argc, char** argv) {
     printf("   Decompresses archive \"archive.bce\" to \"file\"\n");
     printf("\n");
     printf("  bce -s config file\n");
-    printf("   Scan \"file\" and generate a config file \"config\" to improve the AdaptivCoder (uses a lot of memory)\n");
+    printf("   Scan \"file\" and generate a config file \"config\" to improve the AdaptiveCoder (uses a lot of memory)\n");
   }
 }
