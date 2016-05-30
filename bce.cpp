@@ -1001,7 +1001,6 @@ class bitwise {
 #endif
 
       std::vector<uint8_t> out(n);
-      return out;
 
       std::array<uint32_t, 8> C = {
         ranks[0].get<0>(n),
