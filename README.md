@@ -8,11 +8,14 @@ BCE is a compressor for stationary data. It uses an algorithm described at http:
 
 **Usage:**
 
-    bce -c archive.bce file
-     Compresses "file" to archive "archive.bce"
-    
+    bce -c archive.bce file [config]
+     Compresses "file" to archive "archive.bce" [using config "config"]
+
     bce -d file archive.bce
      Decompresses archive "archive.bce" to "file"
+
+    bce -s config file
+     Scan "file" and generate a config file "config" to improve the AdaptiveCoder (uses a lot of memory)
 
 **Building:**
 
