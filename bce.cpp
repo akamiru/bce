@@ -1,12 +1,12 @@
 /**
  * BCE v0.4 - compressor for stationary data
  * Copyright (C) 2016  Christoph Diegelmann
- * 
+ *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * (at your option) any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
@@ -191,7 +191,7 @@ class pArray {
         return;
       }
 
-      cur_ |= (static_cast<uint64_t>(a) << (pos_ - m)) 
+      cur_ |= (static_cast<uint64_t>(a) << (pos_ - m))
             | (static_cast<uint64_t>(b) << (pos_ - (m + n)));
       pos_ -= m + n;
     }
@@ -306,7 +306,7 @@ struct VCoder {
 
   uint32_t getv() {
     uint32_t s = 0;
-    for (int i = 0, j = reinterpret_cast<C*>(this)->C::get(3); i < 31 && j != 2; ++i, j = reinterpret_cast<C*>(this)->C::get(3)) 
+    for (int i = 0, j = reinterpret_cast<C*>(this)->C::get(3); i < 31 && j != 2; ++i, j = reinterpret_cast<C*>(this)->C::get(3))
       s |= j << i;
     return s;
   }
@@ -944,7 +944,7 @@ struct RankFile : public File {
       std::array<uint32_t, 256> C;
       C.fill(0);
 
-      for (std::size_t i = 0; i < size_; ++i) 
+      for (std::size_t i = 0; i < size_; ++i)
         C[map_[i] | 0x80]++;
 
       for (uint32_t i = 0x80; i < 0x100; ++i)
@@ -1149,7 +1149,7 @@ class BCE : private policy_unbwt {
       typename coder_type::value_type data;
       data.push_back(main.data().size());
       data.insert(data.end(), main.data().begin(), main.data().end());
- 
+
       for (int i = 0; i < 8; ++i)
         data.insert(data.end(), coder_[i].data().begin(), coder_[i].data().end());
 
@@ -1173,7 +1173,7 @@ class BCE : private policy_unbwt {
 
       // Decoding the header
       auto header_size = static_cast<uint32_t>(data[0]);
-      coder_type main(-1, data_chunk(1, header_size)); 
+      coder_type main(-1, data_chunk(1, header_size));
 
       auto n      = main.getv();  // size of the decompressed file
       auto offset = main.get(n + 1);
@@ -1208,7 +1208,7 @@ class BCE : private policy_unbwt {
       }
 
       std::array<std::array<pArray, 4>, 8> Q;
-      for (int i = 0; i < 8; ++i) 
+      for (int i = 0; i < 8; ++i)
         if (C[i] && n - C[i])
           Q[i][0].push_back(1, C[i], n - C[i]);
 
@@ -1295,12 +1295,12 @@ class BCE : private policy_unbwt {
 
                   //if (max - min < coder_type::max)
                     coder_[i].set(_0x0 - min, max - min + 1, _0x, _x1, _x);
-                  /*else 
+                  /*else
                     coder_[i].set(_0x0 - min, max - min + 1);*/
                 } else {
                   //if (max - min < coder_type::max)
                     _0x0 = min + coder_[i].get(max - min + 1, _0x, _x1, _x);
-                  /*else 
+                  /*else
                     _0x0 = min + coder_[i].get(max - min + 1);*/
 
                   assert(min <= _0x0 && _0x0 <= max);
@@ -1380,7 +1380,7 @@ int main(int argc, char** argv) {
   printf("BCE v0.4 Release\n");
   printf("Copyright (C) 2016  Christoph Diegelmann\n");
   printf("This is free software under GNU Lesser General Public License. See <http://www.gnu.org/licenses/lgpl>\n\n");
-  
+
   using coder_type = AdaptiveCoder<255>;
 
   if (argc == 4 && argv[1][0] == '-' && argv[1][1] == 's') {
@@ -1400,7 +1400,7 @@ int main(int argc, char** argv) {
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end - start;
-    printf("Scanned %lu B in %.1f s\n", 
+    printf("Scanned %lu B in %.1f s\n",
            file.size(), duration.count());
   } else if ((argc == 4 || argc == 5) && argv[1][0] == '-' && argv[1][1] == 'c') {
     auto start = std::chrono::high_resolution_clock::now();
@@ -1420,12 +1420,12 @@ int main(int argc, char** argv) {
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end - start;
-    printf("Compressed from %lu B -> %lu B in %.1f s\n", 
+    printf("Compressed from %lu B -> %lu B in %.1f s\n",
            file.size(), data.size() * sizeof(decltype(data)::value_type), duration.count());
 
     std::ofstream archive(std::string(argv[2]), std::ios::binary | std::ios::trunc);
 
-    archive.write(reinterpret_cast<const char*>(data.data()), 
+    archive.write(reinterpret_cast<const char*>(data.data()),
                   data.size() * sizeof(decltype(data)::value_type));
   } else if (argc == 4 && argv[1][0] == '-' && argv[1][1] == 'd') {
     // Decompress
@@ -1459,7 +1459,7 @@ int main(int argc, char** argv) {
 
       std::ofstream file(std::string(argv[2]), std::ios::binary | std::ios::trunc);
 
-      file.write(reinterpret_cast<const char*>(data.data()), 
+      file.write(reinterpret_cast<const char*>(data.data()),
                 data.size() * sizeof(typename decltype(data)::value_type));
 
       return 0;
