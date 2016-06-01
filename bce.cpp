@@ -19,6 +19,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cassert>
+#include <cinttypes>
 
 #include <chrono>
 #include <fstream>
@@ -1356,7 +1357,7 @@ class BCE : private policy_unbwt {
           state += local_state;
           auto cur_state = state.load(std::memory_order_relaxed) * 10000 / 8 / n;
           if (cur_state > prev_state) {
-            printf("Encoded: %lu.%02lu %%\r", cur_state / 100, cur_state % 100);
+            printf("Encoded: %" PRIu64 ".%02" PRIu64 " %%\r", cur_state / 100, cur_state % 100);
             prev_state = cur_state;
           }
         }
@@ -1400,7 +1401,7 @@ int main(int argc, char** argv) {
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end - start;
-    printf("Scanned %lu B in %.1f s\n",
+    printf("Scanned %" SCNuMAX " B in %.1f s\n",
            file.size(), duration.count());
   } else if ((argc == 4 || argc == 5) && argv[1][0] == '-' && argv[1][1] == 'c') {
     auto start = std::chrono::high_resolution_clock::now();
@@ -1420,7 +1421,7 @@ int main(int argc, char** argv) {
 
     auto end = std::chrono::high_resolution_clock::now();
     std::chrono::duration<double> duration = end - start;
-    printf("Compressed from %lu B -> %lu B in %.1f s\n",
+    printf("Compressed from %" SCNuMAX" B -> %zu B in %.1f s\n",
            file.size(), data.size() * sizeof(decltype(data)::value_type), duration.count());
 
     std::ofstream archive(std::string(argv[2]), std::ios::binary | std::ios::trunc);
@@ -1454,7 +1455,7 @@ int main(int argc, char** argv) {
 
       auto end = std::chrono::high_resolution_clock::now();
       std::chrono::duration<double> duration = end - start;
-      printf("Decompressed from %lu B -> %lu B in %.1f s\n",
+      printf("Decompressed from %" PRIu64 " B -> %zu B in %.1f s\n",
             size, data.size(), duration.count());
 
       std::ofstream file(std::string(argv[2]), std::ios::binary | std::ios::trunc);
