@@ -168,7 +168,7 @@ class pArray {
 
     void push_back(uint32_t a) {
       assert(a > 0);
-      auto n = 2 * (sizeof(unsigned long) * 8 - 1 - __clz(a)) + 1;
+      auto n = 2 * (sizeof(uint64_t) * 8 - 1 - __clz(a)) + 1;
 
       if (pos_ <= n) {
         data_.push_back(cur_);
@@ -182,8 +182,8 @@ class pArray {
 
     void push_back(uint32_t a, uint32_t b) {
       assert(a > 0 && b > 0);
-      auto m = 2 * (sizeof(unsigned long) * 8 - 1 - __clz(a)) + 1;
-      auto n = 2 * (sizeof(unsigned long) * 8 - 1 - __clz(b)) + 1;
+      auto m = 2 * (sizeof(uint64_t) * 8 - 1 - __clz(a)) + 1;
+      auto n = 2 * (sizeof(uint64_t) * 8 - 1 - __clz(b)) + 1;
 
       if (pos_ <= m + n) {
         push_back(a);
@@ -198,9 +198,9 @@ class pArray {
 
     void push_back(uint32_t a, uint32_t b, uint32_t c) {
       assert(a > 0 && b > 0 && c > 0);
-      auto m = 2 * (sizeof(unsigned long) * 8 - 1 - __clz(a)) + 1;
-      auto n = 2 * (sizeof(unsigned long) * 8 - 1 - __clz(b)) + 1;
-      auto o = 2 * (sizeof(unsigned long) * 8 - 1 - __clz(c)) + 1;
+      auto m = 2 * (sizeof(uint64_t) * 8 - 1 - __clz(a)) + 1;
+      auto n = 2 * (sizeof(uint64_t) * 8 - 1 - __clz(b)) + 1;
+      auto o = 2 * (sizeof(uint64_t) * 8 - 1 - __clz(c)) + 1;
 
       if (pos_ <= m + n + o) {
         push_back(a);
