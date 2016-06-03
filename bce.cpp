@@ -60,8 +60,6 @@ inline constexpr uint64_t __cnt(uint64_t val) {
 
 class Rank {
  public:
-    static constexpr uint64_t bits = sizeof(uintmax_t) * 8;
-
     Rank() : rank_{} {}
 
     Rank(uint32_t n) : rank_{} {
@@ -167,9 +165,9 @@ class pArray {
       data_.reserve(n);
     }
 
-    void push_back(uint32_t a) {
+    inline void push_back(uint32_t a) {
       assert(a > 0);
-      auto n = 2 * (sizeof(uint64_t) * 8 - 1 - __clz(a)) + 1;
+      auto n = 127 - 2 * __clz(a);
 
       if (pos_ <= n) {
         data_.push_back(cur_);
@@ -181,10 +179,10 @@ class pArray {
       pos_ -= n;
     }
 
-    void push_back(uint32_t a, uint32_t b) {
+    inline void push_back(uint32_t a, uint32_t b) {
       assert(a > 0 && b > 0);
-      auto m = 2 * (sizeof(uint64_t) * 8 - 1 - __clz(a)) + 1;
-      auto n = 2 * (sizeof(uint64_t) * 8 - 1 - __clz(b)) + 1;
+      auto m = 127 - 2 * __clz(a);
+      auto n = 127 - 2 * __clz(b);
 
       if (pos_ <= m + n) {
         push_back(a);
@@ -193,26 +191,25 @@ class pArray {
       }
 
       cur_ |= (static_cast<uint64_t>(a) << (pos_ - m))
-            | (static_cast<uint64_t>(b) << (pos_ - (m + n)));
+            | (static_cast<uint64_t>(b) << (pos_ - m - n));
       pos_ -= m + n;
     }
 
-    void push_back(uint32_t a, uint32_t b, uint32_t c) {
+    inline void push_back(uint32_t a, uint32_t b, uint32_t c) {
       assert(a > 0 && b > 0 && c > 0);
-      auto m = 2 * (sizeof(uint64_t) * 8 - 1 - __clz(a)) + 1;
-      auto n = 2 * (sizeof(uint64_t) * 8 - 1 - __clz(b)) + 1;
-      auto o = 2 * (sizeof(uint64_t) * 8 - 1 - __clz(c)) + 1;
+      auto m = 127 - 2 * __clz(a);
+      auto n = 127 - 2 * __clz(b);
+      auto o = 127 - 2 * __clz(c);
 
       if (pos_ <= m + n + o) {
-        push_back(a);
-        push_back(b);
+        push_back(a, b);
         push_back(c);
         return;
       }
 
       cur_ |= (static_cast<uint64_t>(a) << (pos_ - m))
             | (static_cast<uint64_t>(b) << (pos_ - m - n))
-            | (static_cast<uint64_t>(c) << (pos_ - (m + n + o)));
+            | (static_cast<uint64_t>(c) << (pos_ - m - n - o));
       pos_ -= m + n + o;
     }
 
@@ -322,7 +319,7 @@ class UniformCoder : public VCoder<UniformCoder> {
     UniformCoder(int i) : l_(0), h_(-1llu) {}
 
     explicit UniformCoder(int i, UniformCoder::value_type&& data):
-      l_(0), h_(-1llu), m_(0), o_(sizeof(m_) / sizeof(UniformCoder::value_type::value_type)), data_(std::move(data)) {
+      l_(0), h_(-1llu), m_(0), o_(sizeof(m_) / sizeof(data_[0])), data_(std::move(data)) {
       for (uint32_t i = 0; i < data_.size() && i < o_; i++)
         m_ = (m_ << 16) + data_[i];
 
@@ -429,7 +426,7 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
     }
 
     explicit AdaptiveCoder(int i, AdaptiveCoder::value_type&& data):
-      l_(0), h_(-1llu), m_(0), o_(sizeof(m_) / sizeof(data_[0])), data_(data) {
+      l_(0), h_(-1llu), m_(0), o_(sizeof(m_) / sizeof(data_[0])), data_(std::move(data)) {
       for (uint32_t i = 0; i < data_.size() && i < o_; i++)
         m_ = (m_ << 16) + data_[i];
 
@@ -442,7 +439,7 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
     void set(uint32_t s, uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
       if (k > AdaptiveCoder::max) {
         set(s & 1, 2);
-        return set(s >> 1, (k + (~s & 1)) >> 1, c1 >> 1, c2 >> 1, cs >> 1);
+        return set(s >> 1, (k + (~s & 1)) >> 1, c1, c2, cs);
       }
 
       auto* ctx = get_context(k, c1, c2, cs);
@@ -494,7 +491,7 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
     uint32_t get(uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
       if (k > AdaptiveCoder::max) {
         auto s = get(2);
-        return (get((k + (~s & 1)) >> 1, c1 >> 1, c2 >> 1, cs >> 1) << 1) | s;
+        return (get((k + (~s & 1)) >> 1, c1, c2, cs) << 1) | s;
       }
 
       auto* ctx = get_context(k, c1, c2, cs);
@@ -565,8 +562,8 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
 
     static void load_config(std::string file) {
       std::ifstream archive(file, std::ios::binary | std::ios::ate);
-      uint64_t size = archive.tellg();
-      if (size != 256 * 9) {
+      std::size_t size = archive.tellg();
+      if (size != (AdaptiveCoder::max + 1) * 9) {
         printf("Config not found or wrong size.\n");
         return;
       }
@@ -587,10 +584,10 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
     uint32_t o_;
 
     AdaptiveCoder::value_type data_;
-    std::array<uint32_t, AdaptiveCoder::max> off_;
+    std::array<uint32_t, L + 1> off_;
     std::vector<uint8_t> stat_;
 
-    static std::array<std::array<uint8_t, 256>, 9> init_;
+    static std::array<std::array<uint8_t, L + 1>, 9> init_;
 
     inline void shift_out() {
       while (!((h_ ^ l_ ) >> 48)) {
@@ -617,12 +614,12 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
     }
 
     void init(int mode, int i) {
-      std::array<uint8_t, 256> bits;
+      std::array<uint8_t, AdaptiveCoder::max + 1> bits;
 
       if (mode) {
         if (0 > i || i > 7) i = 8;
         bits = init_[i];
-        auto last = 5;
+        auto last = 0;
         for (auto& bit : bits) {
           set(bit != last, 2);
           if (bit != last)
@@ -630,7 +627,7 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
           last = bit;
         }
       } else {
-        auto last = 5;
+        auto last = 0;
         for (auto& bit : bits) {
           bit = get(2) ? get(6) : last;
           last = bit;
@@ -638,9 +635,9 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
       }
 
       uint32_t start = 0;
-      for (int i = 2; i < 256; ++i) {
+      for (int i = 2; i < AdaptiveCoder::max + 1; ++i) {
         off_[i] = start | (bits[i] << 24);
-        start += (1 << (bits[i] * 2)) * i;
+        start += i << bits[i] * 2;
       }
       stat_.insert(stat_.begin(), start, 0);
 
@@ -651,85 +648,16 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
 };
 
 template<int L>
-std::array<std::array<uint8_t, 256>, 9> AdaptiveCoder<L>::init_ = {
-  0,0,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,
-  3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-  1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-  1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,
-
-  0,0,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,
-  3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,
-  3,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,1,
-  1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-  1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,
-
-  0,0,5,5,5,4,4,4,4,4,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,
-  3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,
-  1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-  1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,
-
-  0,0,5,5,5,4,4,4,4,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,
-  3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,1,1,
-  1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-  1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,
-
-  0,0,5,5,4,4,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,
-  3,3,3,3,3,3,3,3,3,3,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,
-  1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-  1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-  1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,0,
-
-  0,0,5,5,4,4,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,
-  3,3,3,3,3,3,3,3,3,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,1,1,1,1,1,1,1,2,2,2,2,1,1,1,1,2,2,2,1,1,1,1,1,1,1,1,1,1,2,2,
-  2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,2,2,2,0,
-
-  0,0,5,5,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,
-  2,2,2,2,2,1,1,2,2,2,2,2,2,2,1,1,1,2,1,1,2,2,2,2,2,2,1,1,1,1,2,2,
-  2,1,1,1,2,2,1,1,1,1,2,1,1,1,2,2,2,1,1,1,2,2,2,2,2,2,1,1,2,2,2,2,
-
-  0,0,5,5,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,
-  2,2,2,2,2,2,2,2,2,2,2,2,1,1,2,2,2,2,2,2,2,2,2,2,2,2,2,1,1,1,1,1,
-  2,2,2,2,2,1,1,2,2,2,2,2,2,2,1,1,1,2,1,1,2,2,2,2,2,2,1,1,1,1,2,2,
-  2,1,1,1,2,2,1,1,1,1,2,1,1,1,2,2,2,1,1,1,2,2,2,2,2,2,1,1,2,2,2,2,
-
-  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
-  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,
+std::array<std::array<uint8_t, L + 1>, 9> AdaptiveCoder<L>::init_ = {
+  0,0,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,0,
+  0,0,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,0,
+  0,0,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,3,3,3,3,0,
+  0,0,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,0,
+  0,0,5,5,4,4,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,0,
+  0,0,5,5,4,4,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,0,
+  0,0,5,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,0,
+  0,0,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,2,2,2,2,2,2,0,
+  0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0
 };
 
 template<int L>
@@ -741,13 +669,12 @@ class ScanCoder : public VCoder<ScanCoder<L>> {
 
     ScanCoder(int i): z_(0), i_{i < 0 || i > 7 ? 8 : i} {}
 
-    // This is not a decoder !
-    //explicit ScanCoder(ScanCoder::value_type&& data) {}
+    explicit ScanCoder(int i, ScanCoder::value_type&& data) = delete; // not a decoder
 
     void set(uint32_t s, uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
       if (k > ScanCoder::max) {
         z_ += log(2);
-        return set(s >> 1, (k >> 1) + ((~s) & 1), c1 >> 1, c2 >> 1, cs >> 1);
+        return set(s >> 1, (k >> 1) + ((~s) & 1), c1, c2, cs);
       }
 
       stat_[k][(((c2 << 8) / cs) << 16) | ((c1 << 8) / cs)].push_back(s);
@@ -759,7 +686,7 @@ class ScanCoder : public VCoder<ScanCoder<L>> {
     uint32_t get(uint32_t k) { return 0; }
 
     void flush() {
-      std::vector<uint16_t> s(ScanCoder::max << 16);
+      std::vector<uint16_t> s;
 
       for (uint32_t k = 2; k < ScanCoder::max; ++k) {
         double z_min = 0;
@@ -767,9 +694,9 @@ class ScanCoder : public VCoder<ScanCoder<L>> {
           z_min += log(k) * pair.second.size();
 
         // clustering hash
-        for (uint32_t j = 0; j <= 10; j += 2) {
+        for (uint32_t j = 0; j <= 5; ++j) {
           s.clear();
-          s.insert(s.begin(), k << j, 0);
+          s.insert(s.begin(), k << (2 * j), 0);
 
           double z = 0;
           for (auto& pair : stat_[k]) {
@@ -777,10 +704,10 @@ class ScanCoder : public VCoder<ScanCoder<L>> {
             uint16_t c1 = c >>  0;
             uint16_t c2 = c >> 16;
 
-            c1 >>= 8 - j / 2;
-            c2 >>= 8 - j / 2;
+            c1 >>= 8 - j;
+            c2 >>= 8 - j;
 
-            c = (c1 << (j / 2)) | c2;
+            c = (c1 << j) | c2;
 
             auto* ctx = &s[c * k];
 
@@ -801,7 +728,7 @@ class ScanCoder : public VCoder<ScanCoder<L>> {
 
           if (z < z_min) {
             z_min = z;
-            init_[i_][k] = j / 2;
+            init_[i_][k] = j;
           }
         }
         z_ += z_min;
@@ -819,7 +746,17 @@ class ScanCoder : public VCoder<ScanCoder<L>> {
 
     static void save_config(std::string file) {
       std::ofstream f(file, std::ios::binary | std::ios::trunc);
-      f.write(reinterpret_cast<const char*>(init_.data()), 256 * 9);
+      f.write(reinterpret_cast<const char*>(init_.data()), (L + 1) * 9);
+
+#ifdef DUMP_CONFIG
+      for (int i = 0; i < 9; ++i) {
+        printf("  0");
+        for (int j = 1; j < L + 1; ++j) {
+          printf(",%u", init_[i][j]);
+        }
+        printf("\n");
+      }
+#endif
     }
  private:
     std::array<std::unordered_map<uint32_t, std::vector<uint8_t>>, ScanCoder::max + 1> stat_;
@@ -827,11 +764,11 @@ class ScanCoder : public VCoder<ScanCoder<L>> {
     double z_;
     int i_;
 
-    static std::array<std::array<uint8_t, 256>, 9> init_;
+    static std::array<std::array<uint8_t, L + 1>, 9> init_;
 };
 
 template<int L>
-std::array<std::array<uint8_t, 256>, 9> ScanCoder<L>::init_;
+std::array<std::array<uint8_t, L + 1>, 9> ScanCoder<L>::init_;
 
 /**************
  * File class *
@@ -865,7 +802,7 @@ class File {
       auto start = std::chrono::high_resolution_clock::now();
 #endif
 
-      // Credits: MaskRay
+      // Credits: MaskRay [github]
       uint32_t i = 0, j = 1, k;
       while (j < size_) {
         for (k = 0; map_[mod(i+k)] == map_[mod(j+k)] && k < size_ - 1; k++);
@@ -920,7 +857,7 @@ class File {
 
  protected:
     std::vector<unsigned char> map_;
-    uint32_t size_;
+    std::size_t size_;
     uint32_t offset_;
     uint32_t status_;
 };
@@ -1258,25 +1195,24 @@ class BCE : private policy_unbwt {
 
               s += *cur++ - 1;
 
-              uint32_t _x0 = *cur++;
-              uint32_t _x1 = *cur++;
+              auto _x0 = *cur++;
+              auto _x1 = *cur++;
               auto _x = _x0 + _x1;
 
-
               auto s1 = ranks[i].get<1>(s);
-              uint32_t _1x = ranks[i].get<1>(s + _x) - s1;
-              uint32_t _0x = _x - _1x;
+              auto _1x = ranks[i].get<1>(s + _x) - s1;
+              auto _0x = _x - _1x;
               auto s0 = s - s1;
 
               if (!_1x) {
-                Q[(i + 1) % 8][2].push_back(s0 - offset[0] + 1, _x0, _x1);
+                Q[i][2].push_back(s0 - offset[0] + 1, _x0, _x1);
                 offset[0] = s0;
                 if (!mode) ranks[i].set(s + _x0, s1 + 0);
                 continue;
               }
 
               if (!_0x) {
-                Q[(i + 1) % 8][3].push_back(s1 - offset[1] + 1, _x0, _x1);
+                Q[i][3].push_back(s1 - offset[1] + 1, _x0, _x1);
                 offset[1] = s1;
                 if (!mode) ranks[i].set(s + _x0, s1 + _x0);
                 continue;
@@ -1292,27 +1228,18 @@ class BCE : private policy_unbwt {
               if (max != min) {
                 if (mode) {
                   _0x0 = ranks[i].get<0>(s + _x0) - s0;
-                  assert(min <= _0x0 && _0x0 <= max);
-
-                  //if (max - min < coder_type::max)
-                    coder_[i].set(_0x0 - min, max - min + 1, _0x, _x1, _x);
-                  /*else
-                    coder_[i].set(_0x0 - min, max - min + 1);*/
+                  coder_[i].set(_0x0 - min, max - min + 1, _0x, _x1, _x);
                 } else {
-                  //if (max - min < coder_type::max)
-                    _0x0 = min + coder_[i].get(max - min + 1, _0x, _x1, _x);
-                  /*else
-                    _0x0 = min + coder_[i].get(max - min + 1);*/
-
-                  assert(min <= _0x0 && _0x0 <= max);
+                  _0x0 = min + coder_[i].get(max - min + 1, _0x, _x1, _x);
                 }
+                assert(min <= _0x0 && _0x0 <= max);
               } else {
                 _0x0 = min;
               }
 
-              int32_t _0x1 = _0x - _0x0;
-              int32_t _1x1 = _x1 - _0x1;
-              int32_t _1x0 = _1x - _1x1;
+              auto _0x1 = _0x - _0x0;
+              auto _1x1 = _x1 - _0x1;
+              auto _1x0 = _1x - _1x1;
 
               if (!mode) ranks[i].set(s + _x0, s1 + _1x0);
 
@@ -1344,12 +1271,12 @@ class BCE : private policy_unbwt {
               assert(_1x0 + _1x1 == _1x);
 #endif
               if (_0x0 * _0x1) {
-                Q[(i + 1) % 8][2].push_back(s0 - offset[0] + 1, _0x0, _0x1);
+                Q[i][2].push_back(s0 - offset[0] + 1, _0x0, _0x1);
                 offset[0] = s0;
               }
 
               if (_1x0 * _1x1) {
-                Q[(i + 1) % 8][3].push_back(s1 - offset[1] + 1, _1x0, _1x1);
+                Q[i][3].push_back(s1 - offset[1] + 1, _1x0, _1x1);
                 offset[1] = s1;
               }
             }
@@ -1357,23 +1284,23 @@ class BCE : private policy_unbwt {
           state += local_state;
           auto cur_state = state.load(std::memory_order_relaxed) * 10000 / 8 / n;
           if (cur_state > prev_state) {
-            printf("Encoded: %" PRIu64 ".%02" PRIu64 " %%\r", cur_state / 100, cur_state % 100);
+            printf("Coded: %" PRIu64 ".%02" PRIu64 " %%\r", cur_state / 100, cur_state % 100);
             prev_state = cur_state;
           }
         }
 
         for (int i = 0; i < 8; ++i) {
-          std::swap(Q[i][0], Q[i][2]);
-          std::swap(Q[i][1], Q[i][3]);
+          std::swap(Q[(i + 1) % 8][0], Q[i][2]);
+          std::swap(Q[(i + 1) % 8][1], Q[i][3]);
 
           Q[i][2].clear();
           Q[i][3].clear();
 
-          if (!Q[i][0].empty() || !Q[i][1].empty())
+          if (!Q[(i + 1) % 8][0].empty() || !Q[(i + 1) % 8][1].empty())
             again = true;
         }
       } while (again);
-      printf("                \r");
+      printf("                    \r");
     }
 };
 
@@ -1382,12 +1309,13 @@ int main(int argc, char** argv) {
   printf("Copyright (C) 2016  Christoph Diegelmann\n");
   printf("This is free software under GNU Lesser General Public License. See <http://www.gnu.org/licenses/lgpl>\n\n");
 
-  using coder_type = AdaptiveCoder<255>;
+  constexpr const int max = 31;
+  using coder_type = UniformCoder;//AdaptiveCoder<max>;
 
   if (argc == 4 && argv[1][0] == '-' && argv[1][1] == 's') {
     auto start = std::chrono::high_resolution_clock::now();
     // Compress
-    BCE<ScanCoder<255>, unbwt::noop> bce;
+    BCE<ScanCoder<max>, unbwt::noop> bce;
 
     RankFile file {std::string(argv[3])};
     if (file.status()) {
@@ -1434,7 +1362,7 @@ int main(int argc, char** argv) {
       auto start = std::chrono::high_resolution_clock::now();
 
       std::ifstream archive(std::string(argv[3]), std::ios::binary | std::ios::ate);
-      uint64_t size = archive.tellg();
+      size_t size = archive.tellg();
       if (size == -1lu) {
         printf("Archive not found.\n");
         return -1;
@@ -1475,13 +1403,13 @@ int main(int argc, char** argv) {
     }
   } else {
     printf("Usage:\n");
-    printf("  bce -c archive.bce file [config]\n");
-    printf("   Compresses \"file\" to archive \"archive.bce\" [using config \"config\"]\n");
+    printf("  bce -c archive.bce file [config.bcc]\n");
+    printf("   Compresses \"file\" to archive \"archive.bce\" [using config \"config.bcc\"]\n");
     printf("\n");
     printf("  bce -d file archive.bce\n");
     printf("   Decompresses archive \"archive.bce\" to \"file\"\n");
     printf("\n");
-    printf("  bce -s config file\n");
-    printf("   Scan \"file\" and generate a config file \"config\" to improve the AdaptiveCoder (uses a lot of memory)\n");
+    printf("  bce -s config.bcc file\n");
+    printf("   Scan \"file\" and generate a config file \"config.bcc\" to improve the AdaptiveCoder (uses a lot of memory)\n");
   }
 }
