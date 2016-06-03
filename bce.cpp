@@ -1310,7 +1310,7 @@ int main(int argc, char** argv) {
   printf("This is free software under GNU Lesser General Public License. See <http://www.gnu.org/licenses/lgpl>\n\n");
 
   constexpr const int max = 31;
-  using coder_type = UniformCoder;//AdaptiveCoder<max>;
+  using coder_type = AdaptiveCoder<max>;
 
   if (argc == 4 && argv[1][0] == '-' && argv[1][1] == 's') {
     auto start = std::chrono::high_resolution_clock::now();
