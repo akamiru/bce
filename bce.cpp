@@ -997,7 +997,9 @@ class bytewise {
           ranks[7].get<0>(n)
         };
 
+#ifdef _OPENMP
         #pragma omp parallel for
+#endif
         for (uint32_t a = 0; a < n; a += s) {
           std::array<uint32_t, 256> D;
           D.fill(0);
@@ -1180,7 +1182,9 @@ class BCE : private policy_unbwt {
       do {
         again = false;
 
+#ifdef _OPENMP
         #pragma omp parallel for
+#endif
         for (int i = 0; i < 8; ++i) {
           uint32_t local_state = 0;
           std::array<uint32_t, 2> offset = {0, 0};
