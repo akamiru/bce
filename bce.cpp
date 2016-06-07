@@ -79,7 +79,7 @@ class Rank {
     inline uint32_t get(uint32_t index) const  {
       auto rank = rank_[index / 32] & (-1llu >> (32 - index % 32));
       return rank + __cnt(rank >> 32);
-    };
+    }
 
     void set(uint32_t _x, uint32_t value) {
       uint64_t n = value - get<1>(_x);
@@ -150,7 +150,7 @@ class Rank {
 template<>
 uint32_t Rank::get<0>(uint32_t index) const  {
   return index - get<1>(index);
-};
+}
 
 /*********************************
  *  The pArray                   *
@@ -1387,7 +1387,7 @@ int main(int argc, char** argv) {
 
       auto end = std::chrono::high_resolution_clock::now();
       std::chrono::duration<double> duration = end - start;
-      printf("Decompressed from %" PRIu64 " B -> %zu B in %.1f s\n",
+      printf("Decompressed from %zu B -> %zu B in %.1f s\n",
             size, data.size(), duration.count());
 
       std::ofstream file(std::string(argv[2]), std::ios::binary | std::ios::trunc);
