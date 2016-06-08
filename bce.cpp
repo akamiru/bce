@@ -34,6 +34,64 @@
 
 #include "divsufsort.h"
 
+#if defined(_MSC_VER)
+#include <intrin.h>
+
+inline uint64_t __clz(uint64_t val) {
+  unsigned long r = 0;
+#if defined(_M_AMD64) || defined(_M_X64) || defined(_M_ARM)
+  if (_BitScanReverse64(&r, val)) {
+    return 63 - r;
+  }
+#else
+  if (_BitScanReverse(&r, static_cast<uint32_t>(val >> 32))) {
+    return 31 - r;
+  }
+  if (_BitScanReverse(&r, static_cast<uint32_t>(val))) {
+    return 63 - r;
+  }
+#endif
+  return 64;
+}
+
+inline uint64_t __ctz(uint64_t val) {
+  unsigned long r = 0;
+#if defined(_M_AMD64) || defined(_M_X64) || defined(_M_ARM)
+  if (_BitScanForward64(&r, val)) {
+    return r;
+  }
+#else
+  if (_BitScanForward(&r, static_cast<uint32_t>(val))) {
+    return r;
+  }
+  if (_BitScanForward(&r, static_cast<uint32_t>(val >> 32))) {
+    return 32 + r;
+  }
+#endif
+  return 64;
+}
+
+inline uint64_t __clo(uint64_t val) {
+  return __clz(~val);
+}
+
+inline uint64_t __cto(uint64_t val) {
+  return __ctz(~val);
+}
+
+inline uint64_t __cnt(uint64_t val) {
+  // https://en.wikipedia.org/wiki/Hamming_weight
+  const uint64_t m1 = 0x5555555555555555;
+  const uint64_t m2 = 0x3333333333333333;
+  const uint64_t m4 = 0x0f0f0f0f0f0f0f0f;
+  const uint64_t h01 = 0x0101010101010101;
+
+  val -= (val >> 1) & m1;
+  val = (val & m2) + ((val >> 2) & m2);
+  val = (val + (val >> 4)) & m4;
+  return (val * h01) >> 56;
+}
+#else
 inline constexpr uint64_t __clz(uint64_t val) {
   return sizeof(unsigned long) == 8 ? __builtin_clzl(val) :  __builtin_clzll(val);
 }
@@ -53,6 +111,7 @@ inline constexpr uint64_t __cto(uint64_t val) {
 inline constexpr uint64_t __cnt(uint64_t val) {
   return sizeof(unsigned long) == 8 ? __builtin_popcountl(val) : __builtin_popcountll(val);
 }
+#endif
 
 /************************
  *  The Rank Dictionary *
@@ -425,7 +484,7 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
       init(1, i);
     }
 
-    explicit AdaptiveCoder(int i, AdaptiveCoder::value_type&& data):
+    explicit AdaptiveCoder(int i, typename AdaptiveCoder::value_type&& data):
       l_(0), h_(-1llu), m_(0), o_(sizeof(m_) / sizeof(data_[0])), data_(std::move(data)) {
       for (uint32_t i = 0; i < data_.size() && i < o_; i++)
         m_ = (m_ << 16) + data_[i];
@@ -583,7 +642,7 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
     uint64_t m_;
     uint32_t o_;
 
-    AdaptiveCoder::value_type data_;
+    typename AdaptiveCoder::value_type data_;
     std::array<uint32_t, L + 1> off_;
     std::vector<uint8_t> stat_;
 
@@ -605,7 +664,7 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
       }
     }
 
-    inline auto get_context(uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) -> typename decltype(this->stat_)::value_type* {
+    inline auto get_context(uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) -> decltype(this->stat_.data()) {
       auto off = off_[k];
       auto bits = off >> 24;
       auto ctx = (((c1 << bits) / cs) << bits) | ((c2 << bits) / cs);
@@ -669,7 +728,7 @@ class ScanCoder : public VCoder<ScanCoder<L>> {
 
     ScanCoder(int i): z_(0), i_{i < 0 || i > 7 ? 8 : i} {}
 
-    explicit ScanCoder(int i, ScanCoder::value_type&& data) = delete; // not a decoder
+    explicit ScanCoder(int i, typename ScanCoder::value_type&& data) = delete; // not a decoder
 
     void set(uint32_t s, uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
       if (k > ScanCoder::max) {
@@ -736,7 +795,7 @@ class ScanCoder : public VCoder<ScanCoder<L>> {
       printf("Result size: %.1f B\n", z_ / log(256));
     }
 
-    inline const ScanCoder::value_type& data() const  {
+    inline const typename ScanCoder::value_type& data() const  {
       return data_;
     }
 
@@ -760,7 +819,7 @@ class ScanCoder : public VCoder<ScanCoder<L>> {
     }
  private:
     std::array<std::unordered_map<uint32_t, std::vector<uint8_t>>, ScanCoder::max + 1> stat_;
-    ScanCoder::value_type data_;
+    typename ScanCoder::value_type data_;
     double z_;
     int i_;
 
@@ -1000,10 +1059,10 @@ class bytewise {
 #ifdef _OPENMP
         #pragma omp parallel for
 #endif
-        for (uint32_t a = 0; a < n; a += s) {
+        for (int64_t a = 0; a < n; a += s) {
           std::array<uint32_t, 256> D;
           D.fill(0);
-          D[1] = a;
+          D[1] = static_cast<uint32_t>(a);
 
           for (int i = 0; i < 7; ++i) {
             for (int j = 0; j < (1 << i); ++j) {
@@ -1013,7 +1072,7 @@ class bytewise {
             }
           }
 
-          for (uint32_t i = a; i < std::min(n, a + s);) {
+          for (uint32_t i = static_cast<uint32_t>(a); i < std::min(n, static_cast<uint32_t>(a) + s);) {
             auto chr = 0;
             for (int j = 0; j < 8; ++j)
               chr |= ranks[j].bit(D[(1 << j) | chr]++) << j;
