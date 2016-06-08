@@ -21,9 +21,11 @@ function(add_cxx_compiler_flags var flags)
   set(${var} "${${var}}" PARENT_SCOPE)
 endfunction()
 
-add_cxx_compiler_flags(CMAKE_CXX_FLAGS "-std=c++14;-Wall;-pedantic;-march=native;-fno-exceptions")
-if (WIN32)
-  set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+if(NOT MSVC)
+  add_cxx_compiler_flags(CMAKE_CXX_FLAGS "-std=c++14;-Wall;-pedantic;-march=native;-fno-exceptions")
+  if(WIN32)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static")
+  endif()
 endif()
 
 find_package(divsufsort REQUIRED)
@@ -39,6 +41,9 @@ endif()
 
 add_executable(bce bce.cpp)
 
-target_link_libraries(bce ${divsufsort_LIBRARIES} pthread)
+target_link_libraries(bce ${divsufsort_LIBRARIES})
+if(NOT MSVC)
+  target_link_libraries(bce pthread)
+endif()
 
 install(TARGETS bce RUNTIME DESTINATION bin)
