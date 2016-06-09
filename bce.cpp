@@ -37,7 +37,7 @@
 #if defined(_MSC_VER)
 #include <intrin.h>
 
-inline uint64_t __clz(uint64_t val) {
+inline uint64_t bce_clz(uint64_t val) {
   unsigned long r = 0;
 #if defined(_M_AMD64) || defined(_M_X64) || defined(_M_ARM)
   if (_BitScanReverse64(&r, val)) {
@@ -54,7 +54,7 @@ inline uint64_t __clz(uint64_t val) {
   return 64;
 }
 
-inline uint64_t __ctz(uint64_t val) {
+inline uint64_t bce_ctz(uint64_t val) {
   unsigned long r = 0;
 #if defined(_M_AMD64) || defined(_M_X64) || defined(_M_ARM)
   if (_BitScanForward64(&r, val)) {
@@ -71,15 +71,15 @@ inline uint64_t __ctz(uint64_t val) {
   return 64;
 }
 
-inline uint64_t __clo(uint64_t val) {
-  return __clz(~val);
+inline uint64_t bce_clo(uint64_t val) {
+  return bce_clz(~val);
 }
 
-inline uint64_t __cto(uint64_t val) {
-  return __ctz(~val);
+inline uint64_t bce_cto(uint64_t val) {
+  return bce_ctz(~val);
 }
 
-inline uint64_t __cnt(uint64_t val) {
+inline uint64_t bce_cnt(uint64_t val) {
   // https://en.wikipedia.org/wiki/Hamming_weight
   const uint64_t m1 = 0x5555555555555555;
   const uint64_t m2 = 0x3333333333333333;
@@ -92,23 +92,23 @@ inline uint64_t __cnt(uint64_t val) {
   return (val * h01) >> 56;
 }
 #else
-inline constexpr uint64_t __clz(uint64_t val) {
+inline constexpr uint64_t bce_clz(uint64_t val) {
   return sizeof(unsigned long) == 8 ? __builtin_clzl(val) :  __builtin_clzll(val);
 }
 
-inline constexpr uint64_t __ctz(uint64_t val) {
+inline constexpr uint64_t bce_ctz(uint64_t val) {
   return sizeof(unsigned long) == 8 ? __builtin_ctzl(val) : __builtin_ctzll(val);
 }
 
-inline constexpr uint64_t __clo(uint64_t val) {
+inline constexpr uint64_t bce_clo(uint64_t val) {
   return sizeof(unsigned long) == 8 ? __builtin_clzl(~val) : __builtin_clzll(~val);
 }
 
-inline constexpr uint64_t __cto(uint64_t val) {
+inline constexpr uint64_t bce_cto(uint64_t val) {
   return sizeof(unsigned long) == 8 ? __builtin_ctzl(~val) : __builtin_ctzll(~val);
 }
 
-inline constexpr uint64_t __cnt(uint64_t val) {
+inline constexpr uint64_t bce_cnt(uint64_t val) {
   return sizeof(unsigned long) == 8 ? __builtin_popcountl(val) : __builtin_popcountll(val);
 }
 #endif
@@ -130,14 +130,14 @@ class Rank {
       for (std::size_t i = 0; i < rank_.size(); ++i) {
         auto b = rank_[i];
         rank_[i] = (b << 32) | rank;
-        rank += __cnt(b);
+        rank += bce_cnt(b);
       }
     }
 
     template<int S>
     inline uint32_t get(uint32_t index) const  {
       auto rank = rank_[index / 32] & (-1llu >> (32 - index % 32));
-      return rank + __cnt(rank >> 32);
+      return rank + bce_cnt(rank >> 32);
     }
 
     void set(uint32_t _x, uint32_t value) {
@@ -159,13 +159,13 @@ class Rank {
       }
 
       uint64_t m0 = -1llu << (32 + o);
-      uint64_t m1 =  0 + __ctz(((b & m0) >> 32) | +(1llu << 31)  );  // get bits
-      uint64_t m2 = 64 - __clo( (b | m0)     /* & ~(1llu << 31)*/);  // put bits - probably decomment for block sizezes >=(1 << 31)
+      uint64_t m1 =  0 + bce_ctz(((b & m0) >> 32) | +(1llu << 31)  );  // get bits
+      uint64_t m2 = 64 - bce_clo( (b | m0)     /* & ~(1llu << 31)*/);  // put bits - probably decomment for block sizezes >=(1 << 31)
 
       m1 = ((1llu << (m1 + n)) - (1llu <<      m1 )) << 32llu;
       m2 = ((1llu <<      m2 ) - (1llu << (m2 - n)));
 
-      b += __cnt(static_cast<uint32_t>(m2));
+      b += bce_cnt(static_cast<uint32_t>(m2));
       b &= ~m1;
       b |= (m2 >> 32llu) << 32llu;
 
@@ -176,7 +176,7 @@ class Rank {
 
     void finalize() {
       for (uint32_t i = 0; i < rank_.size() - 1; ++i) {
-        auto cur = static_cast<uint32_t>(rank_[i]) + __cnt(rank_[i] >> 32);
+        auto cur = static_cast<uint32_t>(rank_[i]) + bce_cnt(rank_[i] >> 32);
         auto nxt = static_cast<uint32_t>(rank_[i + 1]);
 
         rank_[i] |= static_cast<uint64_t>(nxt - cur) << 63;
@@ -226,7 +226,7 @@ class pArray {
 
     inline void push_back(uint32_t a) {
       assert(a > 0);
-      auto n = 127 - 2 * __clz(a);
+      auto n = 127 - 2 * bce_clz(a);
 
       if (pos_ <= n) {
         data_.push_back(cur_);
@@ -240,8 +240,8 @@ class pArray {
 
     inline void push_back(uint32_t a, uint32_t b) {
       assert(a > 0 && b > 0);
-      auto m = 127 - 2 * __clz(a);
-      auto n = 127 - 2 * __clz(b);
+      auto m = 127 - 2 * bce_clz(a);
+      auto n = 127 - 2 * bce_clz(b);
 
       if (pos_ <= m + n) {
         push_back(a);
@@ -256,9 +256,9 @@ class pArray {
 
     inline void push_back(uint32_t a, uint32_t b, uint32_t c) {
       assert(a > 0 && b > 0 && c > 0);
-      auto m = 127 - 2 * __clz(a);
-      auto n = 127 - 2 * __clz(b);
-      auto o = 127 - 2 * __clz(c);
+      auto m = 127 - 2 * bce_clz(a);
+      auto n = 127 - 2 * bce_clz(b);
+      auto o = 127 - 2 * bce_clz(c);
 
       if (pos_ <= m + n + o) {
         push_back(a, b);
@@ -283,12 +283,12 @@ class pArray {
 
       uint64_t operator*() const  {
         auto val = *it_ << cur_;
-        return val >> (63 - 2 * __clz(val));
+        return val >> (63 - 2 * bce_clz(val));
       }
 
       iterator& operator++() {
         auto val = *it_;
-        cur_ += 2 * __clz(val << cur_) + 1;
+        cur_ += 2 * bce_clz(val << cur_) + 1;
 
         if (!(val << cur_)) {
           it_++;
@@ -432,7 +432,7 @@ class UniformCoder : public VCoder<UniformCoder> {
     void flush() {
       shift_out();
 
-      uint32_t bits = __clz(l_ ^ h_) + 1;
+      uint32_t bits = bce_clz(l_ ^ h_) + 1;
       data_.push_back((h_ >> (64 - bits)) << (16 - bits));
     }
 
@@ -606,7 +606,7 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
     void flush() {
       shift_out();
 
-      uint32_t bits = __clz(l_ ^ h_) + 1;
+      uint32_t bits = bce_clz(l_ ^ h_) + 1;
       data_.push_back((h_ >> (64 - bits)) << (16 - bits));
     }
 
