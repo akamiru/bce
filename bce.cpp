@@ -1333,12 +1333,12 @@ class BCE : private policy_unbwt {
               assert(_0x0 + _0x1 == _0x);
               assert(_1x0 + _1x1 == _1x);
 #endif
-              if (_0x0 * _0x1) {
+              if (_0x0 && _0x1) {
                 Q[i][2].push_back(s0 - offset[0] + 1, _0x0, _0x1);
                 offset[0] = s0;
               }
 
-              if (_1x0 * _1x1) {
+              if (_1x0 && _1x1) {
                 Q[i][3].push_back(s1 - offset[1] + 1, _1x0, _1x1);
                 offset[1] = s1;
               }
