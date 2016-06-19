@@ -358,33 +358,15 @@ class pArray {
  * Coder *
  *********/
 
-template<class C>
-struct VCoder {
-  void setv(uint32_t s) {
-    while (s) {
-      reinterpret_cast<C*>(this)->C::set(s & 1, 3);
-      s >>= 1;
-    }
-    reinterpret_cast<C*>(this)->C::set(2, 3);
-  }
-
-  uint32_t getv() {
-    uint32_t s = 0;
-    for (int i = 0, j = reinterpret_cast<C*>(this)->C::get(3); i < 31 && j != 2; ++i, j = reinterpret_cast<C*>(this)->C::get(3))
-      s |= j << i;
-    return s;
-  }
-};
-
-class UniformCoder : public VCoder<UniformCoder> {
+class ArithmeticCoder {
  public:
     using value_type = std::vector<uint16_t>;
     // maximum value for range that will be adaptivly encoded
     static constexpr const int max = 0;
 
-    UniformCoder(int i) : l_(0), h_(-1llu) {}
+    ArithmeticCoder(int i) : l_(0), h_(-1llu) {}
 
-    explicit UniformCoder(int i, UniformCoder::value_type&& data):
+    ArithmeticCoder(int i, ArithmeticCoder::value_type&& data):
       l_(0), h_(-1llu), m_(0), o_(sizeof(m_) / sizeof(data_[0])), data_(std::move(data)) {
       for (uint32_t i = 0; i < data_.size() && i < o_; i++)
         m_ = (m_ << 16) + data_[i];
@@ -393,9 +375,15 @@ class UniformCoder : public VCoder<UniformCoder> {
         m_ <<= 16 * (o_ - data_.size());
     }
 
-    void set(uint32_t s, uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
-      set(s, k);  // encode all numbers using uniform distribution
+    void setv(uint32_t s) {
+      while (s) {
+        set(s & 1, 3);
+        s >>= 1;
+      }
+      set(2, 3);
     }
+
+    void set(uint32_t s, uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {};
 
     void set(uint32_t s, uint32_t k) {
       assert(s < k);
@@ -414,9 +402,14 @@ class UniformCoder : public VCoder<UniformCoder> {
       shift_out();
     }
 
-    uint32_t get(uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
-      return get(k);
+    uint32_t getv() {
+      uint32_t s = 0;
+      for (int i = 0, j = get(3); i < 31 && j != 2; ++i, j = get(3))
+        s |= j << i;
+      return s;
     }
+
+    uint32_t get(uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) { return 0; };
 
     uint32_t get(uint32_t k) {
       if (h_ - l_ < k) {
@@ -443,24 +436,27 @@ class UniformCoder : public VCoder<UniformCoder> {
       data_.push_back((h_ >> (64 - bits)) << (16 - bits));
     }
 
-    inline const UniformCoder::value_type& data() const  {
+    inline const ArithmeticCoder::value_type& data() const  {
       return data_;
     }
 
     void clear() {
-      UniformCoder::value_type().swap(data_);
-      std::vector<uint8_t>().swap(stat_);
+      data_.clear();
+      data_.shrink_to_fit();
+
+      stat_.clear();
+      stat_.shrink_to_fit();
     }
 
     static void load_config(std::string file) {}
 
- private:
+ protected:
     uint64_t l_;
     uint64_t h_;
     uint64_t m_;
     uint32_t o_;
 
-    UniformCoder::value_type data_;
+    value_type data_;
     std::vector<uint8_t> stat_;
 
     inline void shift_out() {
@@ -480,29 +476,38 @@ class UniformCoder : public VCoder<UniformCoder> {
     }
 };
 
-template<int L>
-class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
+class UniformCoder : public ArithmeticCoder {
  public:
-    using value_type = std::vector<uint16_t>;
-    // maximum value for range that will be adaptivly encoded
+    using ArithmeticCoder::ArithmeticCoder;
+
+    using ArithmeticCoder::set;
+    void set(uint32_t s, uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
+      set(s, k);  // encode all numbers using uniform distribution
+    }
+
+    using ArithmeticCoder::get;
+    uint32_t get(uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
+      return get(k);
+    }
+};
+
+template<int L>
+class AdaptiveCoder : public ArithmeticCoder {
+ public:
+    // maximum value for range that will be adaptivly encoded without further splitting
     static constexpr const int max = L;
 
-    AdaptiveCoder(int i) : l_(0), h_(-1llu) {
+    AdaptiveCoder(int i) : ArithmeticCoder(i) {
       init(1, i);
     }
 
-    explicit AdaptiveCoder(int i, typename AdaptiveCoder::value_type&& data):
-      l_(0), h_(-1llu), m_(0), o_(sizeof(m_) / sizeof(data_[0])), data_(std::move(data)) {
-      for (uint32_t i = 0; i < data_.size() && i < o_; i++)
-        m_ = (m_ << 16) + data_[i];
-
-      if (data_.size() < o_)
-        m_ <<= 16 * (o_ - data_.size());
-
+    AdaptiveCoder(int i, typename AdaptiveCoder::value_type&& data):
+      ArithmeticCoder(i, std::move(data)) {
       init(0, i);
     }
 
-    void set(uint32_t s, uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
+    using ArithmeticCoder::set;
+    inline void set(uint32_t s, uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
       if (k > AdaptiveCoder::max) {
         set(s & 1, 2);
         return set(s >> 1, (k + (~s & 1)) >> 1, c1, c2, cs);
@@ -534,24 +539,8 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
       shift_out();
     }
 
-    void set(uint32_t s, uint32_t k) {
-      assert(s < k);
-
-      if (bce_unlikely(h_ - l_ < k)) {
-        for (int i = 0; i < 4; ++i)
-          data_.push_back(l_ >> (48 - 16 * i));
-        l_ = 0;
-        h_ = -1llu;
-      }
-
-      uint64_t step = (h_ - l_) / k;
-      l_ += step * s;
-      h_  = step + l_ - 1;
-
-      shift_out();
-    }
-
-    uint32_t get(uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
+    using ArithmeticCoder::get;
+    inline uint32_t get(uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
       if (k > AdaptiveCoder::max) {
         auto s = get(2);
         return (get((k + (~s & 1)) >> 1, c1, c2, cs) << 1) | s;
@@ -588,40 +577,6 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
       return s;
     }
 
-    uint32_t get(uint32_t k) {
-      if (bce_unlikely(h_ - l_ < k)) {
-        for (int i = 0; i < 4; ++i)
-          m_ = (m_ << 16) + ((o_ < data_.size()) ? data_[o_++] : 0);
-        l_ = 0;
-        h_ = -1llu;
-      }
-
-      uint64_t step = (h_ - l_) / k;
-      uint32_t s    = (m_ - l_) / step;
-
-      l_ += step * s;
-      h_  = step + l_ - 1;
-
-      shift_in();
-      return s;
-    }
-
-    void flush() {
-      shift_out();
-
-      uint32_t bits = bce_clz(l_ ^ h_) + 1;
-      data_.push_back((h_ >> (64 - bits)) << (16 - bits));
-    }
-
-    inline const value_type& data() const  {
-      return data_;
-    }
-
-    void clear() {
-      value_type().swap(data_);
-      std::vector<uint8_t>().swap(stat_);
-    }
-
     static void load_config(std::string file) {
       std::ifstream archive(file, std::ios::binary | std::ios::ate);
       std::size_t size = archive.tellg();
@@ -640,32 +595,9 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
     }
 
  private:
-    uint64_t l_;
-    uint64_t h_;
-    uint64_t m_;
-    uint32_t o_;
-
-    typename AdaptiveCoder::value_type data_;
     std::array<uint32_t, L + 1> off_;
-    std::vector<uint8_t> stat_;
 
     static std::array<std::array<uint8_t, L + 1>, 9> init_;
-
-    inline void shift_out() {
-      while (!((h_ ^ l_ ) >> 48)) {
-        data_.push_back(h_ >> 48);
-        l_ = (l_ << 16) + 0x0000;
-        h_ = (h_ << 16) + 0xFFFF;
-      }
-    }
-
-    inline void shift_in() {
-      while (!((h_ ^ l_ ) >> 48)) {
-        m_ = (m_ << 16) + ((o_ < data_.size()) ? data_[o_++] : 0);
-        l_ = (l_ << 16) + 0x0000;
-        h_ = (h_ << 16) + 0xFFFF;
-      }
-    }
 
     inline auto get_context(uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) -> decltype(this->stat_.data()) {
       auto off = off_[k];
@@ -684,8 +616,7 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
         auto last = 0;
         for (auto& bit : bits) {
           set(bit != last, 2);
-          if (bit != last)
-            set(bit, 6);
+          if (bit != last) set(bit, 6);
           last = bit;
         }
       } else {
@@ -723,17 +654,16 @@ std::array<std::array<uint8_t, L + 1>, 9> AdaptiveCoder<L>::init_ = {
 };
 
 template<int L>
-class ScanCoder : public VCoder<ScanCoder<L>> {
+class ScanCoder : public ArithmeticCoder {
  public:
-    using value_type = std::vector<uint16_t>;
-    // maximum value for range that will be adaptivly encoded
+    // maximum value for range that will be adaptivly encoded without further splitting
     static constexpr const int max = L;
 
-    ScanCoder(int i): z_(0), i_{i < 0 || i > 7 ? 8 : i} {}
+    ScanCoder(int i): ArithmeticCoder{i}, z_(0), i_{i < 0 || i > 7 ? 8 : i}  {}
 
-    explicit ScanCoder(int i, typename ScanCoder::value_type&& data) = delete; // not a decoder
+    ScanCoder(int i, typename ScanCoder::value_type&& data) = delete; // not a decoder
 
-    void set(uint32_t s, uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
+    virtual void set(uint32_t s, uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) final {
       if (k > ScanCoder::max) {
         z_ += log(2);
         return set(s >> 1, (k >> 1) + ((~s) & 1), c1, c2, cs);
@@ -1378,7 +1308,7 @@ int main(int argc, char** argv) {
   printf("This is free software under GNU Lesser General Public License. See <http://www.gnu.org/licenses/lgpl>\n\n");
 
   constexpr const int max = 31;
-  using coder_type = AdaptiveCoder<max>;
+  using coder_type = AdaptiveCoder<max>;// UniformCoder;//
 
   if (argc == 4 && argv[1][0] == '-' && argv[1][1] == 's') {
     auto start = std::chrono::high_resolution_clock::now();
