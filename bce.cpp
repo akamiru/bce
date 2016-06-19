@@ -37,6 +37,10 @@
 #if defined(_MSC_VER)
 #include <intrin.h>
 
+inline constexpr const bool bce_unlikely(const bool value) {
+  return value;
+}
+
 inline uint64_t bce_clz(uint64_t val) {
   unsigned long r = 0;
 #if defined(_M_AMD64) || defined(_M_X64) || defined(_M_ARM)
@@ -92,6 +96,11 @@ inline uint64_t bce_cnt(uint64_t val) {
   return (val * h01) >> 56;
 }
 #else
+
+inline constexpr const bool bce_unlikely(const bool value) {
+  return __builtin_expect(value, 0);
+}
+
 inline constexpr uint64_t bce_clz(uint64_t val) {
   return sizeof(unsigned long) == 8 ? __builtin_clzl(val) :  __builtin_clzll(val);
 }
@@ -160,7 +169,7 @@ class Rank {
 
       uint64_t m0 = -1llu << (32 + o);
       uint64_t m1 =  0 + bce_ctz(((b & m0) >> 32) | +(1llu << 31)  );  // get bits
-      uint64_t m2 = 64 - bce_clo( (b | m0)     /* & ~(1llu << 31)*/);  // put bits - probably decomment for block sizezes >=(1 << 31)
+      uint64_t m2 = 64 - bce_clo( (b | m0)     /* & ~(1llu << 31)*/);  // put bits - probably decomment for block sizes >= (1 << 31)
 
       m1 = ((1llu << (m1 + n)) - (1llu <<      m1 )) << 32llu;
       m2 = ((1llu <<      m2 ) - (1llu << (m2 - n)));
@@ -198,9 +207,6 @@ class Rank {
     void clear() {
       rank_.clear();
       rank_.shrink_to_fit();
-      {
-        std::vector<uint64_t>().swap(rank_);
-      }
     }
  private:
     std::vector<uint64_t> rank_;
@@ -294,6 +300,7 @@ class pArray {
           it_++;
           cur_ = 0;
         }
+
         return *this;
       }
 
@@ -304,7 +311,7 @@ class pArray {
       }
 
       bool operator==(const iterator& it) const  {
-        return std::tie(it_, cur_) == std::tie( it.it_, it.cur_);
+        return std::tie(it_, cur_) == std::tie(it.it_, it.cur_);
       }
 
       bool operator!=(const iterator& it) const  {
@@ -503,12 +510,13 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
 
       auto* ctx = get_context(k, c1, c2, cs);
 
-      uint32_t l = k;
-      for (uint32_t i = 0; i < k; ++i) {
-        l += ctx[i];
-      }
+      uint32_t l = 0;
+      for (uint32_t i = 0; i < s; ++i) l += ctx[i];
+      uint32_t n = l + s;
+      for (uint32_t i = s; i < k; ++i) l += ctx[i];
+      l += k;
 
-      if (h_ - l_ < l) {
+      if (bce_unlikely(h_ - l_ < l)) {
         for (int i = 0; i < 4; ++i)
           data_.push_back(l_ >> (48 - 16 * i));
         l_ = 0;
@@ -516,12 +524,8 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
       }
 
       uint64_t step = (h_ - l_) / l;
-
-      h_ = l_ - 1;
-      for (uint32_t i = 0; i < s + 1; ++i) {
-        l_ = h_ + 1;
-        h_ += step * (ctx[i] + 1);
-      }
+      l_ += step * n;
+      h_ = l_ + step * (ctx[s] + 1) - 1;
 
       if (++ctx[s] == 0xFF)
         for (uint32_t i = 0; i < k; ++i)
@@ -533,7 +537,7 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
     void set(uint32_t s, uint32_t k) {
       assert(s < k);
 
-      if (h_ - l_ < k) {
+      if (bce_unlikely(h_ - l_ < k)) {
         for (int i = 0; i < 4; ++i)
           data_.push_back(l_ >> (48 - 16 * i));
         l_ = 0;
@@ -556,11 +560,9 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
       auto* ctx = get_context(k, c1, c2, cs);
 
       uint32_t l = k;
-      for (uint32_t i = 0; i < k; ++i) {
-        l += ctx[i];
-      }
+      for (uint32_t i = 0; i < k; ++i) l += ctx[i];
 
-      if (h_ - l_ < l) {
+      if (bce_unlikely(h_ - l_ < l)) {
         for (int i = 0; i < 4; ++i)
           m_ = (m_ << 16) + ((o_ < data_.size()) ? data_[o_++] : 0);
         l_ = 0;
@@ -582,11 +584,12 @@ class AdaptiveCoder : public VCoder<AdaptiveCoder<L>> {
           ctx[i] >>= 1;
 
       shift_in();
+
       return s;
     }
 
     uint32_t get(uint32_t k) {
-      if (h_ - l_ < k) {
+      if (bce_unlikely(h_ - l_ < k)) {
         for (int i = 0; i < 4; ++i)
           m_ = (m_ << 16) + ((o_ < data_.size()) ? data_[o_++] : 0);
         l_ = 0;
@@ -853,7 +856,7 @@ class File {
 
     uintmax_t rotate() {
       auto mod = [this](auto i) {
-        if (i >= size_) i -= size_;
+        while (bce_unlikely(i >= size_)) i -= size_;
         return i;
       };
 
@@ -906,7 +909,6 @@ class File {
     }
 
     unsigned char operator[](uintmax_t index) const  {
-      if (index >= size_) index -= size_;
       return map_[index];
     };
 
@@ -965,7 +967,8 @@ struct RankFile : public File {
       }
 
       for (int i = 0; i < 8; ++i) ranks[i].build();
-      std::vector<unsigned char>().swap(map_);
+      map_.clear();
+      map_.shrink_to_fit();
 
 #ifdef M_TIME
       auto end = std::chrono::high_resolution_clock::now();
@@ -1072,11 +1075,11 @@ class bytewise {
             }
           }
 
-          for (uint32_t i = static_cast<uint32_t>(a); i < std::min(n, static_cast<uint32_t>(a) + s);) {
+          for (uint32_t i = static_cast<uint32_t>(a); i < std::min(n, static_cast<uint32_t>(a) + s); ++i) {
             auto chr = 0;
             for (int j = 0; j < 8; ++j)
               chr |= ranks[j].bit(D[(1 << j) | chr]++) << j;
-            out[i++] = chr;
+            out[i] = chr;
           }
         }
 
@@ -1238,6 +1241,7 @@ class BCE : private policy_unbwt {
       uint64_t prev_state = 0;
       std::atomic<uint64_t> state(0);
       bool again = false;
+
       do {
         again = false;
 
@@ -1257,14 +1261,13 @@ class BCE : private policy_unbwt {
               local_state++;
 
               s += *cur++ - 1;
+              auto s1 = ranks[i].get<1>(s);
 
               auto _x0 = *cur++;
               auto _x1 = *cur++;
               auto _x = _x0 + _x1;
 
-              auto s1 = ranks[i].get<1>(s);
               auto _1x = ranks[i].get<1>(s + _x) - s1;
-              auto _0x = _x - _1x;
               auto s0 = s - s1;
 
               if (!_1x) {
@@ -1274,6 +1277,7 @@ class BCE : private policy_unbwt {
                 continue;
               }
 
+              auto _0x = _x - _1x;
               if (!_0x) {
                 Q[i][3].push_back(s1 - offset[1] + 1, _x0, _x1);
                 offset[1] = s1;
@@ -1282,11 +1286,14 @@ class BCE : private policy_unbwt {
               }
 
               // Min Max
-              uint32_t min = std::max(0, static_cast<int32_t>(_x0 - _1x));
-              uint32_t max = _x0 - std::max(0, static_cast<int32_t>(_1x - _x1));
+              uint32_t min = _x0 - _1x;
+              uint32_t max = _1x - _x1;
+              min &= ~(static_cast<int32_t>(min) >> 31);
+              max &= ~(static_cast<int32_t>(max) >> 31);
+              max = _x0 - max;
 
               // Encode/Decode
-              uint32_t _0x0 = 0u;
+              uint32_t _0x0 = min;
 
               if (max != min) {
                 if (mode) {
@@ -1296,15 +1303,7 @@ class BCE : private policy_unbwt {
                   _0x0 = min + coder_[i].get(max - min + 1, _0x, _x1, _x);
                 }
                 assert(min <= _0x0 && _0x0 <= max);
-              } else {
-                _0x0 = min;
               }
-
-              auto _0x1 = _0x - _0x0;
-              auto _1x1 = _x1 - _0x1;
-              auto _1x0 = _1x - _1x1;
-
-              if (!mode) ranks[i].set(s + _x0, s1 + _1x0);
 
 #if 0 // different checks for debugging
               assert(_0x <= _x);
@@ -1333,15 +1332,21 @@ class BCE : private policy_unbwt {
               assert(_0x0 + _0x1 == _0x);
               assert(_1x0 + _1x1 == _1x);
 #endif
+
+              auto _0x1 = _0x - _0x0;
               if (_0x0 && _0x1) {
                 Q[i][2].push_back(s0 - offset[0] + 1, _0x0, _0x1);
                 offset[0] = s0;
               }
 
+              auto _1x1 = _x1 - _0x1;
+              auto _1x0 = _1x - _1x1;
               if (_1x0 && _1x1) {
                 Q[i][3].push_back(s1 - offset[1] + 1, _1x0, _1x1);
                 offset[1] = s1;
               }
+
+              if (!mode) ranks[i].set(s + _x0, s1 + _1x0);
             }
           }
           state += local_state;
