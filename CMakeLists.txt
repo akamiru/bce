@@ -39,7 +39,7 @@ if(USE_OPENMP)
   endif()
 endif()
 
-add_executable(bce bce.cpp)
+add_executable(bce main.cpp)
 
 target_link_libraries(bce ${divsufsort_LIBRARIES})
 if(NOT MSVC)
