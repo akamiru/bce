@@ -424,6 +424,7 @@ namespace bce {
   }
 
   namespace coder {
+    // base class of (currently) all coders not a coder itself
     template<class Allocator = std::allocator<uint8_t>>
     class arithmetic {
      public:
@@ -544,6 +545,7 @@ namespace bce {
         }
     };
 
+    // Coder with uniform distribution (worse compression but faster)
     template<class Allocator = std::allocator<uint8_t>>
     class uniform : public arithmetic<Allocator> {
      public:
@@ -560,6 +562,7 @@ namespace bce {
         }
     };
 
+    // Coder with adaptive distribution (better compression but slower)
     template<int L, class Allocator = std::allocator<uint8_t>>
     class adaptive : public arithmetic<Allocator> {
      public:
@@ -727,6 +730,7 @@ namespace bce {
       0,0,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,2,2,2,2,2,2,0
     };
 
+    // Used to calculate init_ parameter for the adaptive coder
     template<int L, class Allocator = std::allocator<uint8_t>>
     class scan : public arithmetic<Allocator> {
      public:
@@ -829,6 +833,7 @@ namespace bce {
   }
           template<class x> struct y;
 
+  // ties all options together and implements the real coding stage
   template<class transform = transform::bwt<>, class inverse = inverse::unbwt_bytewise<>, class coder = coder::adaptive<31>> // coder::uniform<>
   class Compressor : private transform, private inverse {
    public:
