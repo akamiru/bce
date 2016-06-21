@@ -144,7 +144,7 @@ namespace bce {
           std::rotate(first + i, last - 1, last);
           return index;
         }
-    }; // build allocator support
+    };
 
     // no transform at all
     template<class Allocator = std::allocator<int32_t>>
