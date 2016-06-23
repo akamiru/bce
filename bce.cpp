@@ -20,6 +20,7 @@
 #include <cstdio>
 #include <cassert>
 #include <cinttypes>
+#include <cmath>
 
 #include <chrono>
 #include <fstream>

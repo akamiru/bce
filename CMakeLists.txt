@@ -43,7 +43,7 @@ add_executable(bce bce.cpp)
 
 target_link_libraries(bce ${divsufsort_LIBRARIES})
 if(NOT MSVC)
-  target_link_libraries(bce pthread)
+  target_link_libraries(bce pthread m)
 endif()
 
 install(TARGETS bce RUNTIME DESTINATION bin)
