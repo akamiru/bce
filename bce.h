@@ -24,6 +24,7 @@
 #include <climits>
 #include <cstdint>
 #include <cstdio>
+#include <cmath>
 
 #include <algorithm>
 #include <fstream>
