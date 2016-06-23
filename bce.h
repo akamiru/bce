@@ -52,48 +52,47 @@ namespace bce {
 
         void build() {
           uint32_t rank = 0;
-          for (std::size_t i = 0; i < rank_.size(); ++i) {
-            auto b = rank_[i];
-            rank_[i] = (b << 32) | rank;
-            rank += builtin::cnt(b);
+          for (auto& b : rank_) {
+            b = (b << 32) | rank;
+            rank += builtin::cnt(b >> 32);
           }
         }
 
         template<int S>
         inline uint32_t get(uint32_t index) const  {
           if (S == 0) return index - get<1>(index);
-          auto rank = rank_[index / 32] & (-1llu >> (32 - index % 32));
+          auto rank = rank_[index / 32] & (UINT64_C(-1) >> (32 - index % 32));
           return rank + builtin::cnt(rank >> 32);
         }
 
         void set(uint32_t _x, uint32_t value) {
-          uint64_t n = value - get<1>(_x);
+          auto n = value - get<1>(_x);
           if (n == 0) return;
-          assert (n < (1llu << 32));
+          assert (n < (UINT64_C(1) << 32));
 
-          uint64_t i = _x / 32llu;
-          uint64_t o = _x % 32llu;
+          auto i = _x / 32;
+          auto o = _x % 32;
 
           // bits      rank
           // [76543210][00000000]
-          uint64_t b = rank_[i];
-          uint32_t r = b;
+          auto b = rank_[i];
+          auto r = static_cast<uint32_t>(b);
 
-          if (r + o + 32 < n) {
-            b += n - o - r;
+          if (o + r + 32 < n) {
+            b += n - (o + r);
             n = o;
           }
 
-          uint64_t m0 = -1llu << (32 + o);
-          uint64_t m1 =  0 + builtin::ctz(((b & m0) >> 32) | +(1llu << 31)  );  // get bits
-          uint64_t m2 = 64 - builtin::clo( (b | m0)     /* & ~(1llu << 31)*/);  // put bits - probably decomment for block sizes >= (1 << 31)
+          auto m0 = UINT64_C(-1) << (32 + o);
+          auto m1 = UINT64_C( 0) + builtin::ctz(((b & m0) >> 32) | +(UINT64_C(1) << 31)  );  // get bits
+          auto m2 = UINT64_C(64) - builtin::clo( (b | m0)     /* & ~(UINT64_C(1) << 31)*/);  // put bits - probably decomment for block sizes >= (1 << 31)
 
-          m1 = ((1llu << (m1 + n)) - (1llu <<      m1 )) << 32llu;
-          m2 = ((1llu <<      m2 ) - (1llu << (m2 - n)));
+          m1 = ((UINT64_C(1) << (m1 + n)) - (UINT64_C(1) <<      m1 )) << 32;
+          m2 = ((UINT64_C(1) <<      m2 ) - (UINT64_C(1) << (m2 - n)));
 
           b += builtin::cnt(static_cast<uint32_t>(m2));
           b &= ~m1;
-          b |= (m2 >> 32llu) << 32llu;
+          b |= m2 & (UINT64_C(-1) << 32);
 
           rank_[i] = b;
 
@@ -139,8 +138,10 @@ namespace bce {
         template<class ForwardIt>
         ForwardIt transform(ForwardIt first, ForwardIt last) {
           auto index = builtin::to_lmsr(first, last);
+
           std::vector<int32_t, Allocator> SA(last - first);
-          uint32_t i = divbwt(&*first, &*first, SA.data(), last - first - 1);
+          auto i = divbwt(&*first, &*first, SA.data(), last - first - 1);
+
           std::rotate(first + i, last - 1, last);
           return index;
         }
@@ -167,7 +168,7 @@ namespace bce {
 
         template<class R>
         value_type inverse(std::array<R, 8>& ranks, uint32_t offset, uint32_t n) { 
-          return std::vector<uint8_t, Allocator>(); 
+          return value_type(); 
         }
     };
 
@@ -179,7 +180,7 @@ namespace bce {
 
         template<class R>
         value_type inverse(std::array<R, 8>& ranks, uint32_t offset, uint32_t n) {
-          std::vector<uint8_t, Allocator> out(n);
+          value_type out(n);
 
           auto s = (((n / 8) >> 12) + 1) << 12;
 
@@ -203,12 +204,12 @@ namespace bce {
               }
             }
 
-            for (auto i = a; i < std::min(n, a + s); ++i) {
+            std::generate(out.begin() + a, out.begin() + std::min(n, a + s), [&D, &ranks](){
               auto chr = 0;
               for (int j = 0; j < 8; ++j)
                 chr |= ranks[j].bit(D[(1 << j) | chr]++) << j;
-              out[i] = chr;
-            }
+              return chr;
+            });
           }
 
           for (int i = 0; i < 8; ++i)
@@ -226,28 +227,25 @@ namespace bce {
 
         template<class R>
         value_type inverse(std::array<R, 8>& ranks, uint32_t offset, uint32_t n) {
-          std::vector<uint8_t, Allocator> out(n);
+          value_type out(n, 0);
 
           std::array<uint32_t, 8> C = {0};
           for (int i = 0; i < 8; ++i)
             C[i] = ranks[i].template get<0>(n);
 
-          auto mod = [n](auto i) {
-            while (i >= n) i -= n;
-            return i;
-          };
-
           // unbwt
           uint32_t s = 0;
-          for (auto i = n - 1; i != -1lu; --i) {
-            uint8_t chr = 0;
+
+          auto step = [&ranks, &C, &s](auto& chr) {
             for (int j = 0; j < 8; j++) {
               auto bit = ranks[j].bit(s);
               chr |= bit << j;
               s = (bit ? C[j] + ranks[j].template get<1>(s) : ranks[j].template get<0>(s));
             }
-            out[mod(i + offset)] = chr;
-          }
+          };
+
+          for (auto i = offset - 1; i != UINT32_C(-1); --i) step(out[i]);
+          for (auto i = n - 1; i != offset - 1; --i) step(out[i]);
 
           return out;
         }
@@ -274,7 +272,7 @@ namespace bce {
 
   // policies for the queue
   namespace queue {
-    // a queue implemented using elias gamma coding
+    // a queue implemented using elias gamma coding (linear memory usage)
     template<class Allocator = std::allocator<uint64_t>>
     class packed {
      public:
@@ -333,7 +331,7 @@ namespace bce {
 
             explicit iterator(vit it) : it_(std::move(it)), cur_(0) {}
 
-            uint64_t operator*() const  {
+            uint64_t operator*() const {
               auto val = *it_ << cur_;
               return val >> (63 - 2 * builtin::clz(val));
             }
@@ -400,7 +398,7 @@ namespace bce {
         uint64_t pos_;
     };
 
-    // vector based queue eats a huge amount of ram but may be faster
+    // vector based queue eats a huge amount of ram but may be faster (O(n * log(n)) memory)
     template<class Allocator = std::allocator<uint32_t>>
     class vector : public std::vector<uint32_t, Allocator> {
      public:
@@ -428,18 +426,19 @@ namespace bce {
     template<class Allocator = std::allocator<uint8_t>>
     class arithmetic {
      public:
+        using state_type = uint64_t;
         using element_type = uint8_t;
         using value_type = std::vector<element_type, Allocator>;
         // maximum value for range that will be adaptivly encoded
         static constexpr const int max = 0;
-        static constexpr const int bitsS = sizeof(uint64_t) * CHAR_BIT; // state bits
-        static constexpr const int bitsE = sizeof(typename value_type::value_type) * CHAR_BIT; // element bits
+        static constexpr const int bitsS = sizeof(state_type) * CHAR_BIT; // state bits
+        static constexpr const int bitsE = sizeof(element_type) * CHAR_BIT; // element bits
 
-        arithmetic(int i) : l_{0}, h_{-1llu}, m_{0} {}
+        arithmetic(int i) : l_{0}, h_{UINT64_C(-1)} {}
 
         arithmetic(int i, element_type* first, element_type* last):
-          l_{0}, h_{-1llu}, m_{0}, data_{}, cur_{first}, last_{last} {
-          for (uint32_t i = 0; i < bitsS / bitsE; i++)
+          l_{0}, h_{UINT64_C(-1)}, cur_{first}, last_{last} {
+          for (std::size_t i = 0; i < bitsS / bitsE; i++)
             m_ = (m_ << bitsE) + ((cur_ < last_) ? *cur_++ : 0);
         }
 
@@ -460,10 +459,10 @@ namespace bce {
             for (std::size_t i = 0; i < bitsS / bitsE; ++i)
               data_.push_back(l_ >> (bitsS - bitsE * (i + 1)));
             l_ = 0;
-            h_ = -1llu;
+            h_ = UINT64_C(-1);
           }
 
-          uint64_t step = (h_ - l_) / k;
+          auto step = (h_ - l_) / k;
           l_ += step * s;
           h_  = step + l_ - 1;
 
@@ -484,11 +483,11 @@ namespace bce {
             for (std::size_t i = 0; i < bitsS / bitsE; ++i)
               m_ = (m_ << bitsE) + ((cur_ < last_) ? *cur_++ : 0);
             l_ = 0;
-            h_ = -1llu;
+            h_ = UINT64_C(-1);
           }
 
-          uint64_t step = (h_ - l_) / k;
-          uint32_t s    = (m_ - l_) / step;
+          auto step = (h_ - l_) / k;
+          auto s    = (m_ - l_) / step;
 
           l_ += step * s;
           h_  = step + l_ - 1;
@@ -500,8 +499,8 @@ namespace bce {
         void flush() {
           shift_out();
 
-          uint32_t bits = builtin::clz(l_ ^ h_) + 1;
-          data_.push_back(static_cast<uint8_t>((h_ >> (bitsS - bits)) << (bitsE - bits)));
+          auto bits = builtin::clz(l_ ^ h_) + 1;
+          data_.push_back((h_ >> (bitsS - bits)) << (bitsE - bits));
           if (cur_ != nullptr) cur_++;
         }
 
@@ -519,9 +518,9 @@ namespace bce {
         static void load_config(std::string file) {}
 
      protected:
-        uint64_t l_;
-        uint64_t h_;
-        uint64_t m_;
+        state_type l_;
+        state_type h_;
+        state_type m_;
 
         value_type data_;
         element_type* cur_;
@@ -531,16 +530,16 @@ namespace bce {
         inline void shift_out() {
           while (!((h_ ^ l_ ) >> (bitsS - bitsE))) {
             data_.push_back(h_ >> (bitsS - bitsE));
-            l_ = (l_ << bitsE) + 0x00;
-            h_ = (h_ << bitsE) + 0xFF;
+            l_ = (l_ << bitsE) +  static_cast<element_type>(0);
+            h_ = (h_ << bitsE) + ~static_cast<element_type>(0);
           }
         }
 
         inline void shift_in() {
           while (!((h_ ^ l_ ) >> (bitsS - bitsE))) {
             m_ = (m_ << bitsE) + ((cur_ < last_) ? *cur_++ : 0);
-            l_ = (l_ << bitsE) + 0x00;
-            h_ = (h_ << bitsE) + 0xFF;
+            l_ = (l_ << bitsE) +  static_cast<element_type>(0);
+            h_ = (h_ << bitsE) + ~static_cast<element_type>(0);
           }
         }
     };
@@ -566,6 +565,7 @@ namespace bce {
     template<int L, class Allocator = std::allocator<uint8_t>>
     class adaptive : public arithmetic<Allocator> {
      public:
+       using typename arithmetic<Allocator>::state_type;
         // maximum value for range that will be adaptivly encoded without further splitting
         static constexpr const int max = L;
         using arithmetic<Allocator>::bitsS;
@@ -589,20 +589,17 @@ namespace bce {
 
           auto* ctx = get_context(k, c1, c2, cs);
 
-          uint32_t l = 0;
-          for (uint32_t i = 0; i < s; ++i) l += ctx[i];
-          uint32_t n = l + s;
-          for (uint32_t i = s; i < k; ++i) l += ctx[i];
-          l += k;
+          state_type n = std::accumulate(ctx, ctx + s, s);
+          state_type l = std::accumulate(ctx + s, ctx + k, n - s + k);
 
           if (builtin::unlikely(arithmetic<Allocator>::h_ - arithmetic<Allocator>::l_ < l)) {
             for (std::size_t i = 0; i < bitsS / bitsE; ++i)
               data_.push_back(l_ >> (bitsS - bitsE * (i + 1)));
             l_ = 0;
-            h_ = -1llu;
+            h_ = UINT64_C(-1);
           }
 
-          uint64_t step = (h_ - l_) / l;
+          auto step = (h_ - l_) / l;
           l_ += step * n;
           h_ = l_ + step * (ctx[s] + 1) - 1;
 
@@ -622,22 +619,21 @@ namespace bce {
 
           auto* ctx = get_context(k, c1, c2, cs);
 
-          uint32_t l = k;
-          for (uint32_t i = 0; i < k; ++i) l += ctx[i];
+          auto l = std::accumulate(ctx, ctx + k, k);
 
-          if (builtin::unlikely(h_ - l_ < k)) {
+          if (builtin::unlikely(h_ - l_ < l)) {
             for (std::size_t i = 0; i < bitsS / bitsE; ++i)
               m_ = (m_ << bitsE) + ((cur_ < last_) ? *cur_++ : 0);
             l_ = 0;
-            h_ = -1llu;
+            h_ = UINT64_C(-1);
           }
 
-          uint64_t step = (h_ - l_) / l;
+          auto step = (h_ - l_) / l;
 
           h_ = l_ - 1;
-          uint32_t s = -1u;
+          uint32_t s = UINT32_C(-1);
           do {
-            s++;
+            ++s;
             l_ = h_ + 1;
             h_ += step * (ctx[s] + 1);
           } while (h_ < m_);
@@ -759,9 +755,9 @@ namespace bce {
           std::vector<uint16_t> s;
 
           for (uint32_t k = 2; k < scan::max; ++k) {
-            double z_min = 0;
-            for (auto& pair : stat_[k])
-              z_min += log(k) * pair.second.size();
+            double z_min = std::accumulate(stat_[k].begin(), stat_[k].end(), 0., [k](auto z, auto& pair) {
+              return z + log(k) * pair.second.size();
+            });
 
             // clustering hash
             for (uint32_t j = 0; j <= 5; ++j) {
@@ -775,16 +771,17 @@ namespace bce {
 
                 auto* ctx = &s[c * k];
 
+                auto l = std::accumulate(ctx, ctx + k, k);
                 for (auto& s : pair.second) {
-                  uint32_t l = k;
-                  for (uint32_t i = 0; i < k; ++i) l += ctx[i];
-
                   z += log(static_cast<double>(l) / (1 + ctx[s]));
 
                   // update
-                  if (++ctx[s] == 0xFF)
+                  ++l;
+                  if (++ctx[s] == 0xFF) {
                     for (uint32_t i = 0; i < k; ++i)
                       ctx[i] >>= 1;
+                    l = std::accumulate(ctx, ctx + k, k);
+                  }
                 }
               }
 
@@ -821,7 +818,7 @@ namespace bce {
     #endif
         }
      private:
-        std::array<std::unordered_map<uint32_t, std::vector<uint8_t>, Allocator>, scan::max + 1> stat_;
+        std::array<std::unordered_map<uint32_t, std::vector<uint8_t, Allocator>, Allocator>, scan::max + 1> stat_;
         double z_;
         int i_;
 
@@ -895,7 +892,7 @@ namespace bce {
       typename coder::value_type finalize() {
         coder_[0].setv(0);
 
-        std::size_t size = 0;
+        uint32_t size = 0;
         for (int i = 0; i < 7; ++i) {
           coder_[i].flush();
           size += coder_[i].data().size();
@@ -905,7 +902,7 @@ namespace bce {
         // Build the header data
         coder main(-1);
         main.setv(size);
-        for (int i = 0, s = size; i < 6; ++i) {
+        for (auto s = size, i = 0u; i < 6; ++i) {
           main.set(coder_[i].data().size(), s + 1);
           s -= coder_[i].data().size();
         }
