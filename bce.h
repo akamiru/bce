@@ -28,6 +28,7 @@
 
 #include <algorithm>
 #include <fstream>
+#include <numeric>
 
 #include <array>
 #include <tuple>
@@ -168,8 +169,8 @@ namespace bce {
         using value_type = std::vector<uint8_t, Allocator>;
 
         template<class R>
-        value_type inverse(std::array<R, 8>& ranks, uint32_t offset, uint32_t n) { 
-          return value_type(); 
+        value_type inverse(std::array<R, 8>& ranks, uint32_t offset, uint32_t n) {
+          return value_type();
         }
     };
 
@@ -688,7 +689,7 @@ namespace bce {
         void init(int mode, int i) {
           std::array<uint8_t, adaptive::max + 1> bits;
 
-          if (0 <= i && i <= 7) { 
+          if (0 <= i && i <= 7) {
             if (mode) {
               bits = init_[i];
               auto last = 0;
