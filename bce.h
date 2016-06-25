@@ -22,9 +22,9 @@
 #include <cassert>
 #include <cinttypes>
 #include <climits>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
-#include <cmath>
 
 #include <algorithm>
 #include <fstream>
@@ -155,6 +155,7 @@ namespace bce {
      public:
         template<class ForwardIt>
         ForwardIt transform(ForwardIt first, ForwardIt last) {
+          (void) last;
           return first;
         }
     };
@@ -169,8 +170,8 @@ namespace bce {
         using value_type = std::vector<uint8_t, Allocator>;
 
         template<class R>
-        value_type inverse(std::array<R, 8>& ranks, uint32_t offset, uint32_t n) {
-          return value_type();
+        void inverse(std::array<R, 8>& ranks, uint32_t offset, uint32_t n) {
+          (void) ranks; (void) offset; (void) n;
         }
     };
 
@@ -180,13 +181,12 @@ namespace bce {
      public:
         using value_type = std::vector<uint8_t, Allocator>;
 
-        template<class R>
-        value_type inverse(std::array<R, 8>& ranks, uint32_t offset, uint32_t n) {
-          value_type out(n);
-
+        template<class R, class It>
+        void inverse(std::array<R, 8>& ranks, uint32_t offset, It out, uint32_t n) {
+          (void) offset;
           auto s = (((n / 8) >> 12) + 1) << 12;
 
-          std::array<uint32_t, 8> C = {0};
+          std::array<uint32_t, 8> C;
           for (int i = 0; i < 8; ++i)
             C[i] = ranks[i].template get<0>(n);
 
@@ -206,7 +206,7 @@ namespace bce {
               }
             }
 
-            std::generate(out.begin() + a, out.begin() + std::min(n, a + s), [&D, &ranks](){
+            std::generate(out + a, out + std::min(n, a + s), [&D, &ranks](){
               auto chr = 0;
               for (int j = 0; j < 8; ++j)
                 chr |= ranks[j].bit(D[(1 << j) | chr]++) << j;
@@ -216,8 +216,6 @@ namespace bce {
 
           for (int i = 0; i < 8; ++i)
             ranks[i].clear();
-
-          return out;
         }
     };
 
@@ -227,18 +225,16 @@ namespace bce {
      public:
         using value_type = std::vector<uint8_t, Allocator>;
 
-        template<class R>
-        value_type inverse(std::array<R, 8>& ranks, uint32_t offset, uint32_t n) {
-          value_type out(n, 0);
-
-          std::array<uint32_t, 8> C = {0};
+        template<class R, class It>
+        void inverse(std::array<R, 8>& ranks, uint32_t offset, It out, uint32_t n) {
+          std::array<uint32_t, 8> C;
           for (int i = 0; i < 8; ++i)
             C[i] = ranks[i].template get<0>(n);
 
           // unbwt
           uint32_t s = 0;
 
-          auto step = [&ranks, &C, &s](auto& chr) {
+          auto step = [&ranks, &C, &s](decltype(*out)& chr) {
             for (int j = 0; j < 8; j++) {
               auto bit = ranks[j].bit(s);
               chr |= bit << j;
@@ -248,8 +244,6 @@ namespace bce {
 
           for (auto i = offset - 1; i != UINT32_C(-1); --i) step(out[i]);
           for (auto i = n - 1; i != offset - 1; --i) step(out[i]);
-
-          return out;
         }
     };
 
@@ -259,15 +253,13 @@ namespace bce {
      public:
         using value_type = typename identity<Allocator>::value_type;
 
-        template<class R>
-        value_type inverse(std::array<R, 8>& ranks, uint32_t offset, uint32_t n) {
-          auto out = identity<Allocator>::inverse(ranks, offset, n);
+        template<class R, class It>
+        void inverse(std::array<R, 8>& ranks, uint32_t offset, It out, uint32_t n) {
+          identity<Allocator>::inverse(ranks, offset, out, n);
 
           std::vector<int32_t, Allocator> SA(n);
-          inverse_bw_transform(out.data(), out.data(), nullptr, n, 1);
-          std::rotate(out.begin(), out.end() - offset, out.end());
-
-          return out;
+          inverse_bw_transform(&*out, &*out, nullptr, n, 1);
+          std::rotate(out, out + n - offset, out + n);
         }
     };
   }
@@ -436,10 +428,11 @@ namespace bce {
         static constexpr const int bitsS = sizeof(state_type) * CHAR_BIT; // state bits
         static constexpr const int bitsE = sizeof(element_type) * CHAR_BIT; // element bits
 
-        arithmetic(int i) : l_{0}, h_{UINT64_C(-1)} {}
+        arithmetic(int i) : l_{0}, h_{UINT64_C(-1)} { (void) i; }
 
         arithmetic(int i, element_type* first, element_type* last):
           l_{0}, h_{UINT64_C(-1)}, cur_{first}, last_{last} {
+          (void) i;
           for (std::size_t i = 0; i < bitsS / bitsE; i++)
             m_ = (m_ << bitsE) + ((cur_ < last_) ? *cur_++ : 0);
         }
@@ -452,7 +445,7 @@ namespace bce {
           set(2, 3);
         }
 
-        void set(uint32_t s, uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {};
+        void set(uint32_t s, uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) = delete;
 
         void set(uint32_t s, uint32_t k) {
           assert(s < k);
@@ -478,7 +471,7 @@ namespace bce {
           return s;
         }
 
-        uint32_t get(uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) { return 0; };
+        uint32_t get(uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) = delete;
 
         uint32_t get(uint32_t k) {
           if (builtin::unlikely(h_ - l_ < k)) {
@@ -498,26 +491,56 @@ namespace bce {
           return s;
         }
 
-        void flush() {
+        const value_type& flush() {
           shift_out();
 
+          // @todo get this working
           auto bits = builtin::clz(l_ ^ h_) + 1;
-          data_.push_back((h_ >> (bitsS - bits)) << (bitsE - bits));
+          (void) bits;
+
+          for (std::size_t i = 0; i < bitsS / bitsE; ++i)
+            data_.push_back(h_ >> (bitsS - bitsE * (i + 1)));
+
+          //data_.push_back((h_ >> (bitsS - bits)) << (bitsE - bits));
           if (cur_ != nullptr) cur_++;
+          return data_;
         }
 
         const value_type& data() const  { return data_; }
         element_type* cur() const { return cur_; };
 
-        void clear() {
+        /*void clear() {
           data_.clear();
           data_.shrink_to_fit();
 
           stat_.clear();
           stat_.shrink_to_fit();
+        }*/
+
+        // reset this coder for reuse (doesn't reset the stats)
+        void reset() {
+          data_.clear();
+          data_.shrink_to_fit();
+
+          l_ = 0;
+          h_ = UINT64_C(-1);
         }
 
-        static void load_config(std::string file) {}
+        // reset this coder for reuse (doesn't reset the stats)
+        void reset(element_type* first, element_type* last) {
+          data_.clear();
+          data_.shrink_to_fit();
+
+          l_ = m_ = 0;
+          h_ = UINT64_C(-1);
+          cur_ = first;
+          last_ = last;
+
+          for (std::size_t i = 0; i < bitsS / bitsE; i++)
+            m_ = (m_ << bitsE) + ((cur_ < last_) ? *cur_++ : 0);
+        }
+
+        static void load_config(std::string file) { (void) file; }
 
      protected:
         state_type l_;
@@ -554,11 +577,13 @@ namespace bce {
 
         using arithmetic<Allocator>::set;
         void set(uint32_t s, uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
+          (void) c1; (void) c2; (void) cs;
           set(s, k);  // encode all numbers using uniform distribution
         }
 
         using arithmetic<Allocator>::get;
         uint32_t get(uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
+          (void) c1; (void) c2; (void) cs;
           return get(k);
         }
     };
@@ -692,12 +717,12 @@ namespace bce {
           if (0 <= i && i <= 7) {
             if (mode) {
               bits = init_[i];
-              auto last = 0;
+              /*auto last = 0;
               for (auto& bit : bits) {
                 set(bit != last, 2);
                 if (bit != last) set(bit, 6);
                 last = bit;
-              }
+              }*/
             } else {
               auto last = 0;
               for (auto& bit : bits) {
@@ -717,16 +742,16 @@ namespace bce {
     };
 
     template<int L, class Allocator>
-    std::array<std::array<uint8_t, L + 1>, 8> adaptive<L, Allocator>::init_ = {
-      0,0,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,0,
-      0,0,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,0,
-      0,0,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,3,3,3,3,0,
-      0,0,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,0,
-      0,0,5,5,4,4,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,0,
-      0,0,5,5,4,4,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,0,
-      0,0,5,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,0,
-      0,0,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,2,2,2,2,2,2,0
-    };
+    std::array<std::array<uint8_t, L + 1>, 8> adaptive<L, Allocator>::init_ = {{
+      std::array<uint8_t, L + 1>{{0,0,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,0}},
+      std::array<uint8_t, L + 1>{{0,0,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,0}},
+      std::array<uint8_t, L + 1>{{0,0,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,3,3,3,3,0}},
+      std::array<uint8_t, L + 1>{{0,0,5,5,5,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,0}},
+      std::array<uint8_t, L + 1>{{0,0,5,5,4,4,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,0}},
+      std::array<uint8_t, L + 1>{{0,0,5,5,4,4,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,0}},
+      std::array<uint8_t, L + 1>{{0,0,5,4,4,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,0}},
+      std::array<uint8_t, L + 1>{{0,0,4,4,4,4,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,3,2,2,2,2,2,2,0}}
+    }};
 
     // Used to calculate init_ parameter for the adaptive coder
     template<int L, class Allocator = std::allocator<uint8_t>>
@@ -757,7 +782,7 @@ namespace bce {
           std::vector<uint16_t> s;
 
           for (uint32_t k = 2; k < scan::max; ++k) {
-            double z_min = std::accumulate(stat_[k].begin(), stat_[k].end(), 0., [k](auto z, auto& pair) {
+            double z_min = std::accumulate(stat_[k].begin(), stat_[k].end(), 0., [k](double z, decltype(*stat_[k].begin())& pair) {
               return z + log(k) * pair.second.size();
             });
 
@@ -803,7 +828,7 @@ namespace bce {
           stat_.shrink_to_fit();
         }
 
-        static void load_config(std::string file) {}
+        static void load_config(std::string file) { (void) file;}
 
         static void save_config(std::string file) {
           std::ofstream f(file, std::ios::binary | std::ios::trunc);
@@ -837,48 +862,18 @@ namespace bce {
   class Compressor : private transform, private inverse {
    public:
       // Init a new compressor
-      Compressor() : coder_{0,1,2,3,4,5,6,7} {}
+      Compressor() : coder_{{0,1,2,3,4,5,6,7}} {}
 
-      // Init a new decompressor stream
-      template<class ForwardIt>
-      Compressor(ForwardIt first, ForwardIt last) : coder_{0,1,2,3,4,5,6,7} {
-        // Decoding the header
-        auto header_size = static_cast<uint32_t>(*first);
-        coder main(-1, &first[1], &first[1 + header_size]);
-        auto size   = main.getv();  // size of the first 7 coder
-
-        std::array<uint32_t, 8> coder_offsets = {header_size + 1};
-        coder_offsets[7] = coder_offsets[0] + size;
-
-        for (int i = 0; i < 6; ++i) {
-          coder_offsets[i + 1] = coder_offsets[i] + main.get(size + 1u);
-          size -= coder_offsets[i + 1] - coder_offsets[i];
-        }
-        main.clear();
-
-        coder_ = {
-          coder(0, &first[coder_offsets[0]], &first[coder_offsets[1]]),
-          coder(1, &first[coder_offsets[1]], &first[coder_offsets[2]]),
-          coder(2, &first[coder_offsets[2]], &first[coder_offsets[3]]),
-          coder(3, &first[coder_offsets[3]], &first[coder_offsets[4]]),
-          coder(4, &first[coder_offsets[4]], &first[coder_offsets[5]]),
-          coder(5, &first[coder_offsets[5]], &first[coder_offsets[6]]),
-          coder(6, &first[coder_offsets[6]], &first[coder_offsets[7]]),
-          coder(7, &first[coder_offsets[7]], &*last),
-        };
-      }
-
-      // compress a range [first, last)
-      template<class rank = rank::fast<>, class queue = queue::packed<>, class ForwardIt>
-      int compress(ForwardIt first, ForwardIt last) {
-        if (last == first) return -1;
+      // compress a range [first, last) to [t_first, *t_last)
+      // ranges may interleave
+      template<class rank = rank::fast<>, class queue = queue::packed<>, class It, class tIt>
+      int compress(It first, It last, tIt t_first, tIt* t_last) {
+        if (last == first || *t_last == t_first) return -1;
 
         auto offset = this->transform(first, last);
 
         auto ranks = builtin::to_dictionary<rank>(first, last);
         auto n = last - first;
-        coder_[0].setv(n);
-        coder_[0].set(offset - first, n + 1);
 
         std::array<uint32_t, 8> C;
         for (int i = 0; i < 8; ++i) {
@@ -888,51 +883,92 @@ namespace bce {
 
         code<1, queue>(C, ranks, n);
 
-        return 0;
-      }
-
-      typename coder::value_type finalize() {
-        coder_[0].setv(0);
-
         uint32_t size = 0;
-        for (int i = 0; i < 7; ++i) {
-          coder_[i].flush();
-          size += coder_[i].data().size();
-        }
-        coder_[7].flush();
+        for (auto& c : coder_) size += c.flush().size();
 
         // Build the header data
         coder main(-1);
+        main.setv(n);
         main.setv(size);
-        for (auto s = size, i = 0u; i < 6; ++i) {
+        main.set(offset - first, n); // offset must not be n
+
+        for (uint32_t s = size, i = 0; i < 7; ++i) {
           main.set(coder_[i].data().size(), s + 1);
           s -= coder_[i].data().size();
         }
         main.flush();
 
-        // tie the data together
-        typename coder::value_type data;
-        data.push_back(main.data().size());
-        data.insert(data.end(), main.data().begin(), main.data().end());
+        size += main.data().size();
+        if (*t_last < t_first + size) {
+          *t_last = t_first + size;
+          return -2;
+        }
+        *t_last = t_first + size;
 
-        for (int i = 0; i < 8; ++i)
-          data.insert(data.end(), coder_[i].data().begin(), coder_[i].data().end());
+        t_first = std::copy(main.data().begin(), main.data().end(), t_first);
+        for (auto& c : coder_) {
+          t_first = std::copy(c.data().begin(), c.data().end(), t_first);
+          c.reset();
+        }
 
-        return data;
+        return 0;
       }
 
-      // decompress a chunk
-      // @return empty if no further chunks
-      template<class rank = rank::fast<>, class queue = queue::packed<>>
-      typename inverse::value_type decompress() {
-        // copy internal state
-        auto _coder = coder_[0];
-        if (!_coder.getv()) return typename inverse::value_type();
+      // get the decompressed and compressed size of the block
+      // @return std::pair<uncompressed, compressed> size
+      template<class It>
+      std::pair<std::size_t, std::size_t> block_info(It first, It last) {
+        coder main(-1, &*first, &*last);
+        auto n      = main.getv();
+        auto size   = main.getv();
+        auto offset = main.get(n); // offset must not be n
+        (void) offset;
 
-        auto n      = coder_[0].getv();  // size of the decompressed file
-        auto offset = coder_[0].get(n + 1);
+        auto s = size;
+        for (int i = 0; i < 7; ++i)
+          s -= main.get(s + 1u);
+        main.flush();
 
-        std::array<rank, 8> ranks = {n, n, n, n, n, n, n, n};
+        auto off = main.cur() - &*first - 1;
+        return std::make_pair(n, size + off);
+      }
+
+      // decompress a compressed range [*first, last) to [t_first, *t_last)
+      // ranges may not interleave
+      template<class rank = rank::fast<>, class queue = queue::packed<>, class It, class tIt>
+      int decompress(It* first, It last, It t_first, tIt* t_last) {
+        coder main(-1, &**first, &*last);
+        auto n      = main.getv();
+        auto size   = main.getv();
+        auto offset = main.get(n); // offset must not be n
+
+        if (last < *first + size) {
+          *first = last - size;
+          return -2; // not enough loaded
+        }
+
+        if (*t_last < t_first + n) {
+          *t_last = t_first + n;
+          return -3; // not enough memory
+        }
+
+        std::array<uint32_t, 8> coder_offsets = {{0}};
+
+        for (int i = 0; i < 7; ++i) {
+          coder_offsets[i + 1] = coder_offsets[i] + main.get(size + 1u);
+          size -= coder_offsets[i + 1] - coder_offsets[i];
+        }
+        main.flush();
+
+        auto off = main.cur() - &**first - 1;
+
+        for (int i = 0; i < 8; ++i)
+          coder_[i].reset(&*(*first + coder_offsets[i] + off), &*last);
+
+        *first += size;
+        *t_last = t_first + n;
+
+        std::array<rank, 8> ranks = {{n, n, n, n, n, n, n, n}};
 
         std::array<uint32_t, 8> C;
         for (int i = 0; i < 8; ++i) {
@@ -944,10 +980,12 @@ namespace bce {
 
         for (int i = 0; i < 8; ++i) {
           ranks[i].finalize();
-          coder_[i].clear();
+          coder_[i].reset();
         }
 
-        return this->inverse(ranks, offset, n);
+        this->inverse(ranks, offset, t_first, n);
+
+        return 0;
       }
    private:
       std::array<coder, 8> coder_;
@@ -969,7 +1007,7 @@ namespace bce {
           #pragma omp parallel for
 #endif
           for (int i = 0; i < 8; ++i) {
-            std::array<uint32_t, 2> offset = {0, 0};
+            std::array<uint32_t, 2> offset = {{0, 0}};
 
             for (int j = 0; j < 2; ++j) {
               auto cur = Q[i][j].begin();
