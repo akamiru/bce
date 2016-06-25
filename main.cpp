@@ -44,8 +44,9 @@ int compress(std::string archive_name, std::string file_name) {
   auto remain = size;
   decltype(size) out_size = 0;
   std::vector<uint8_t> map;
+  constexpr const std::size_t block_size_max = UINT64_C(1) << 30;
   do {
-    auto block_size = std::min(remain, static_cast<std::size_t>(1llu << 30));
+    auto block_size = std::min(remain, block_size_max);
     if (map.size() < block_size)  map.resize(block_size);
 
     if (!file.read(reinterpret_cast<char*>(map.data()), block_size))
