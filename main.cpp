@@ -19,6 +19,13 @@
 #include "bce.h"
 
 #include <chrono>
+#include <algorithm>
+
+using Compressor = bce::Compressor<
+  bce::transform::bwt<>,          // transform
+  bce::inverse::unbwt_bytewise<>, // inverse transform
+  bce::coder::adaptive<31>        // coder
+>;
 
 int compress(std::string archive_name, std::string file_name) {
   auto start = std::chrono::high_resolution_clock::now();
@@ -32,30 +39,33 @@ int compress(std::string archive_name, std::string file_name) {
   std::ofstream archive(archive_name, std::ios::binary | std::ios::trunc);
   if (!archive.is_open()) return -2;
 
-  bce::Compressor<
-    bce::transform::bwt<>, 
-    bce::inverse::unbwt_bytewise<>, 
-    bce::coder::adaptive<31>
-  > bce;
+  Compressor bce;
 
   auto remain = size;
+  decltype(size) out_size = 0;
+  std::vector<uint8_t> map;
   do {
     auto block_size = std::min(remain, static_cast<std::size_t>(1llu << 30));
+    if (map.size() < block_size)  map.resize(block_size);
 
-    std::vector<uint8_t> map(block_size);
-    if (!file.read(reinterpret_cast<char*>(map.data()), block_size)) return -2;
+    if (!file.read(reinterpret_cast<char*>(map.data()), block_size))
+      return -2; // read error
 
-    bce.compress<
-        bce::rank::fast<>, 
-        bce::queue::packed<>
-      >(map.begin(), map.end());
+    auto t_last = map.end();
+    if (bce.compress<
+            bce::rank::fast<>,
+            bce::queue::packed<>
+          >(map.begin(), map.begin() + block_size, map.begin(), &t_last) < -2) {
+      return -3;
+      // not enough memory to store the result
+      // better error reporting will follow
+      map.resize(t_last - map.begin());
+    }
 
+    archive.write(reinterpret_cast<const char*>(map.data()), t_last - map.begin());
+    out_size += t_last - map.begin();
     remain -= block_size;
   } while(remain);
-
-  auto data = bce.finalize();
-  auto out_size = data.size() * sizeof(decltype(data)::value_type);
-  archive.write(reinterpret_cast<const char*>(data.data()), out_size);
 
   auto end = std::chrono::high_resolution_clock::now();
   std::chrono::duration<double> duration = end - start;
@@ -74,31 +84,47 @@ int decompress(std::string file_name, std::string archive_name) {
   if (size == -1lu) return -1;
   archive.seekg(0, std::ios::beg);
 
-  std::vector<uint8_t> map(size);
-  if (!archive.read(reinterpret_cast<char*>(map.data()), size)) return -2;
-
   std::ofstream file(file_name, std::ios::binary | std::ios::trunc);
   if (!file.is_open()) return -2;
 
-  bce::Compressor<
-    bce::transform::bwt<>, 
-    bce::inverse::unbwt_bytewise<>,
-    bce::coder::adaptive<31>
-  > bce(map.begin(), map.end());
+  Compressor bce;
 
   std::size_t out_size = 0;
+  std::size_t remain = size;
 
-  while(1) {
-    auto data = bce.decompress<
-        bce::rank::fast<>, 
+  constexpr const std::size_t header_max = 1024;
+  std::vector<uint8_t> map(header_max); // max size of the header
+  while(remain > 0) {
+    // read enough bytes to decode the header
+    auto header_read = std::min(header_max, remain);
+    if (!archive.read(reinterpret_cast<char*>(map.data()), header_read)) return -2;
+
+    // read the info [decompressed size, compressed size]
+    auto info = bce.block_info(map.begin(), map.end());
+
+    auto max = std::max(info.first, info.second);
+    if (map.size() < max)
+      map.resize(max);
+
+    if (info.second > header_read)
+      if (!archive.read(reinterpret_cast<char*>(map.data() + header_read), info.second - header_read)) return -2;  // reading the remaining bytes
+
+    auto begin = map.begin();
+    auto end   = map.begin() + info.first;
+
+    if (bce.decompress<
+        bce::rank::fast<>,
         bce::queue::packed<>
-      >();
+      >(&begin, begin + info.second, map.begin(), &end)) {
+      return -3;
+    }
 
-    auto size = data.size() * sizeof(decltype(data)::value_type);
-    if (!size) break;
+    remain -= info.second;
+    out_size += info.first;
 
-    out_size += size;
-    file.write(reinterpret_cast<const char*>(data.data()), size);
+    if (info.second < header_max) archive.seekg(size - remain, std::ios::beg);
+
+    file.write(reinterpret_cast<const char*>(map.data()), end - map.begin());
   }
 
   auto end = std::chrono::high_resolution_clock::now();
