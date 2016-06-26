@@ -27,6 +27,7 @@
 #include <cstdio>
 
 #include <algorithm>
+#include <boost/math/distributions/hypergeometric.hpp>
 #include <fstream>
 #include <numeric>
 
@@ -450,9 +451,10 @@ namespace bce {
         void set(uint32_t s, uint32_t k) {
           assert(s < k);
 
-          if (builtin::unlikely(h_ - l_ < k)) {
+          if (builtin::unlikely(h_ - l_ <= k)) {
+            auto m_ = (l_ >> 1) + (h_ >> 1) + (h_ & l_ & 1);
             for (std::size_t i = 0; i < bitsS / bitsE; ++i)
-              data_.push_back(l_ >> (bitsS - bitsE * (i + 1)));
+              data_.push_back(m_ >> (bitsS - bitsE * (i + 1)));
             l_ = 0;
             h_ = UINT64_C(-1);
           }
@@ -474,7 +476,7 @@ namespace bce {
         uint32_t get(uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) = delete;
 
         uint32_t get(uint32_t k) {
-          if (builtin::unlikely(h_ - l_ < k)) {
+          if (builtin::unlikely(h_ - l_ <= k)) {
             for (std::size_t i = 0; i < bitsS / bitsE; ++i)
               m_ = (m_ << bitsE) + ((cur_ < last_) ? *cur_++ : 0);
             l_ = 0;
@@ -492,30 +494,29 @@ namespace bce {
         }
 
         const value_type& flush() {
+          auto bits = builtin::clz(h_ - l_) + 2;
+          l_ = ((l_ >> (bitsS - bits)) + 1) << (bitsS - bits);
+          while (l_) {
+            data_.push_back(l_ >> (bitsS - bitsE));
+            l_ <<= bitsE;
+            cur_++;
+          }
+
           shift_out();
 
-          // @todo get this working
-          auto bits = builtin::clz(l_ ^ h_) + 1;
-          (void) bits;
-
-          for (std::size_t i = 0; i < bitsS / bitsE; ++i)
-            data_.push_back(h_ >> (bitsS - bitsE * (i + 1)));
-
-          //data_.push_back((h_ >> (bitsS - bits)) << (bitsE - bits));
-          if (cur_ != nullptr) cur_++;
           return data_;
         }
 
         const value_type& data() const  { return data_; }
-        element_type* cur() const { return cur_; };
+        element_type* cur() const { return cur_ - bitsS / bitsE; };
 
-        /*void clear() {
+        void clear() {
           data_.clear();
           data_.shrink_to_fit();
 
           stat_.clear();
           stat_.shrink_to_fit();
-        }*/
+        }
 
         // reset this coder for reuse (doesn't reset the stats)
         void reset() {
@@ -553,6 +554,7 @@ namespace bce {
         std::vector<uint8_t, Allocator> stat_;
 
         inline void shift_out() {
+          // @todo fix it
           while (!((h_ ^ l_ ) >> (bitsS - bitsE))) {
             data_.push_back(h_ >> (bitsS - bitsE));
             l_ = (l_ << bitsE) +  static_cast<element_type>(0);
@@ -611,7 +613,7 @@ namespace bce {
         inline void set(uint32_t s, uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
           if (k > adaptive::max) {
             set(s & 1, 2);
-            return set(s >> 1, (k + (~s & 1)) >> 1, c1, c2, cs);
+            return set(s >> 1, (k + (~s & 1)) >> 1, c1 >> 1, c2 >> 1, cs >> 1);
           }
 
           auto* ctx = get_context(k, c1, c2, cs);
@@ -929,7 +931,7 @@ namespace bce {
           s -= main.get(s + 1u);
         main.flush();
 
-        auto off = main.cur() - &*first - 1;
+        auto off = main.cur() - &*first;
         return std::make_pair(n, size + off);
       }
 
@@ -960,7 +962,7 @@ namespace bce {
         }
         main.flush();
 
-        auto off = main.cur() - &**first - 1;
+        auto off = main.cur() - &**first;
 
         for (int i = 0; i < 8; ++i)
           coder_[i].reset(&*(*first + coder_offsets[i] + off), &*last);
@@ -1053,9 +1055,9 @@ namespace bce {
                 if (max != min) {
                   if (mode) {
                     _0x0 = ranks[i].template get<0>(s + _x0) - s0;
-                    coder_[i].set(_0x0 - min, max - min + 1, _0x, _x1, _x);
+                    coder_[i].set(_0x0 - min, max - min + 1, _0x, _x0, _x);
                   } else {
-                    _0x0 = min + coder_[i].get(max - min + 1, _0x, _x1, _x);
+                    _0x0 = min + coder_[i].get(max - min + 1, _0x, _x0, _x);
                   }
                   assert(min <= _0x0 && _0x0 <= max);
                 }
