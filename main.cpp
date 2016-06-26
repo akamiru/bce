@@ -55,7 +55,7 @@ int compress(std::string archive_name, std::string file_name) {
     auto t_last = map.end();
     if (bce.compress<
             bce::rank::fast<>,
-            bce::queue::vector<>
+            bce::queue::packed<>
           >(map.begin(), map.begin() + block_size, map.begin(), &t_last) < -2) {
       return -3;
       // not enough memory to store the result
@@ -115,7 +115,7 @@ int decompress(std::string file_name, std::string archive_name) {
 
     if (bce.decompress<
         bce::rank::fast<>,
-        bce::queue::vector<>
+        bce::queue::packed<>
       >(&begin, begin + info.second, map.begin(), &end)) {
       return -3;
     }
