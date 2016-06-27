@@ -62,11 +62,18 @@ namespace bce {
         }
 
         template<int S>
-        inline uint32_t get(uint32_t index) const  {
-          if (S == 0) return index - get<1>(index);
+        static uint32_t get_(const uint64_t* rank_, uint32_t index) {
+          if (S == 0) return index - get_<1>(rank_, index);
           auto rank = rank_[index / 32] & (UINT64_C(-1) >> (32 - index % 32));
           return rank + builtin::cnt(rank >> 32);
         }
+
+        template<int S>
+        uint32_t get(uint32_t index) const {
+          return fast<Allocator>::get_<S>(rank_.data(), index);
+        }
+
+        uint64_t* data() { return rank_.data(); }
 
         void set(uint32_t _x, uint32_t value) {
           auto n = value - get<1>(_x);
@@ -111,15 +118,15 @@ namespace bce {
           }
         }
 
-        inline uint32_t bit(uint32_t offset) const {
+        uint32_t bit(uint32_t offset) const {
           return (rank_[offset / 32] >> (offset % 32 + 32)) & 1;
         }
 
-        inline uint32_t set_bit(uint32_t offset, uint64_t bit) {
+        uint32_t set_bit(uint32_t offset, uint64_t bit) {
           return rank_[offset / 32] |= bit << (offset % 32);
         }
 
-        inline uint32_t size() {
+        uint32_t size() {
           return rank_.size();
         }
 
@@ -235,7 +242,7 @@ namespace bce {
           // unbwt
           uint32_t s = 0;
 
-          auto step = [&ranks, &C, &s](decltype(*out)& chr) {
+          auto step = [&ranks, &C, &s](auto& chr) {
             for (int j = 0; j < 8; j++) {
               auto bit = ranks[j].bit(s);
               chr |= bit << j;
@@ -273,7 +280,7 @@ namespace bce {
      public:
         packed() : data_{}, cur_(0), pos_(64) {}
 
-        inline void push_back(uint32_t a) {
+        void push_back(uint32_t a) {
           assert(a > 0);
           auto n = 127 - 2 * builtin::clz(a);
 
@@ -287,7 +294,7 @@ namespace bce {
           pos_ -= n;
         }
 
-        inline void push_back(uint32_t a, uint32_t b) {
+        void push_back(uint32_t a, uint32_t b) {
           assert(a > 0 && b > 0);
           auto m = 127 - 2 * builtin::clz(a);
           auto n = 127 - 2 * builtin::clz(b);
@@ -303,7 +310,7 @@ namespace bce {
           pos_ -= m + n;
         }
 
-        inline void push_back(uint32_t a, uint32_t b, uint32_t c) {
+        void push_back(uint32_t a, uint32_t b, uint32_t c) {
           assert(a > 0 && b > 0 && c > 0);
           auto m = 127 - 2 * builtin::clz(a);
           auto n = 127 - 2 * builtin::clz(b);
@@ -397,21 +404,23 @@ namespace bce {
     template<class Allocator = std::allocator<uint32_t>>
     class vector : public std::vector<uint32_t, Allocator> {
      public:
-        using std::vector<uint32_t>::push_back;
-        inline void push_back(uint32_t a, uint32_t b) {
-          std::vector<uint32_t>::push_back(a);
-          std::vector<uint32_t>::push_back(b);
+        using pvector = std::vector<uint32_t>;
+
+        using pvector::push_back;
+        void push_back(uint32_t a, uint32_t b) {
+          pvector::push_back(a);
+          pvector::push_back(b);
         }
 
-        inline void push_back(uint32_t a, uint32_t b, uint32_t c) {
-          std::vector<uint32_t>::push_back(a);
-          std::vector<uint32_t>::push_back(b);
-          std::vector<uint32_t>::push_back(c);
+        void push_back(uint32_t a, uint32_t b, uint32_t c) {
+          pvector::push_back(a);
+          pvector::push_back(b);
+          pvector::push_back(c);
         }
 
         void clear() {
-          std::vector<uint32_t>::clear();
-          std::vector<uint32_t>::shrink_to_fit();
+          pvector::clear();
+          pvector::shrink_to_fit();
         }
     };
   }
@@ -553,7 +562,7 @@ namespace bce {
         element_type* last_;
         std::vector<uint8_t, Allocator> stat_;
 
-        inline void shift_out() {
+        void shift_out() {
           // @todo fix it
           while (!((h_ ^ l_ ) >> (bitsS - bitsE))) {
             data_.push_back(h_ >> (bitsS - bitsE));
@@ -562,7 +571,7 @@ namespace bce {
           }
         }
 
-        inline void shift_in() {
+        void shift_in() {
           while (!((h_ ^ l_ ) >> (bitsS - bitsE))) {
             m_ = (m_ << bitsE) + ((cur_ < last_) ? *cur_++ : 0);
             l_ = (l_ << bitsE) +  static_cast<element_type>(0);
@@ -610,7 +619,7 @@ namespace bce {
         }
 
         using arithmetic<Allocator>::set;
-        inline void set(uint32_t s, uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
+        void set(uint32_t s, uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
           if (k > adaptive::max) {
             set(s & 1, 2);
             return set(s >> 1, (k + (~s & 1)) >> 1, c1 >> 1, c2 >> 1, cs >> 1);
@@ -640,7 +649,7 @@ namespace bce {
         }
 
         using arithmetic<Allocator>::get;
-        inline uint32_t get(uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
+        uint32_t get(uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
           if (k > adaptive::max) {
             auto s = get(2);
             return (get((k + (~s & 1)) >> 1, c1, c2, cs) << 1) | s;
@@ -705,7 +714,7 @@ namespace bce {
 
         static std::array<std::array<uint8_t, L + 1>, 8> init_;
 
-        inline auto get_context(uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) -> decltype(this->stat_.data()) {
+        auto get_context(uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) -> decltype(this->stat_.data()) {
           auto off = off_[k];
           auto bits = off >> 24;
           auto ctx = (((c1 << bits) / cs) << bits) | ((c2 << bits) / cs);
@@ -784,7 +793,7 @@ namespace bce {
           std::vector<uint16_t> s;
 
           for (uint32_t k = 2; k < scan::max; ++k) {
-            double z_min = std::accumulate(stat_[k].begin(), stat_[k].end(), 0., [k](double z, decltype(*stat_[k].begin())& pair) {
+            double z_min = std::accumulate(stat_[k].begin(), stat_[k].end(), 0., [k](double z, auto& pair) {
               return z + log(k) * pair.second.size();
             });
 
@@ -874,8 +883,8 @@ namespace bce {
 
         auto offset = this->transform(first, last);
 
-        auto ranks = builtin::to_dictionary<rank>(first, last);
         auto n = last - first;
+        auto ranks = builtin::to_dictionary<rank>(first, last);
 
         std::array<uint32_t, 8> C;
         for (int i = 0; i < 8; ++i) {
@@ -883,7 +892,7 @@ namespace bce {
           coder_[i].set(C[i], n + 1);
         }
 
-        code<1, queue>(C, ranks, n);
+        code<1, queue>(n, ranks, C);
 
         uint32_t size = 0;
         for (auto& c : coder_) size += c.flush().size();
@@ -978,7 +987,7 @@ namespace bce {
           ranks[(i + 7) % 8].set(n, n - C[i]);
         }
 
-        code<0, queue>(C, ranks, n);
+        code<0, queue>(n, ranks, C);
 
         for (int i = 0; i < 8; ++i) {
           ranks[i].finalize();
@@ -993,7 +1002,7 @@ namespace bce {
       std::array<coder, 8> coder_;
 
       template<int mode, class queue, class rank>
-      void code(const std::array<uint32_t, 8>& C, std::array<rank, 8>& ranks, const uint32_t n) {
+      void code(const uint32_t n, std::array<rank, 8>& ranks, const std::array<uint32_t, 8>& C) {
         std::array<std::array<queue, 4>, 8> Q;
 
         for (int i = 0; i < 8; ++i)
@@ -1016,21 +1025,24 @@ namespace bce {
               auto end = Q[i][j].end();
               auto s = C[i] * j;
 
+              auto& rank_ = ranks[i];
+              auto d = rank_.data();
+
               while (cur != end) {
                 s += *cur++ - 1;
-                auto s1 = ranks[i].template get<1>(s);
+                auto s1 = rank::template get_<1>(d, s);
 
                 auto _x0 = *cur++;
                 auto _x1 = *cur++;
                 auto _x = _x0 + _x1;
 
-                auto _1x = ranks[i].template get<1>(s + _x) - s1;
+                auto _1x = rank::template get_<1>(d, s + _x) - s1;
                 auto s0 = s - s1;
 
                 if (!_1x) {
                   Q[i][2].push_back(s0 - offset[0] + 1, _x0, _x1);
                   offset[0] = s0;
-                  if (!mode) ranks[i].set(s + _x0, s1 + 0);
+                  if (!mode) rank_.set(s + _x0, s1 + 0);
                   continue;
                 }
 
@@ -1038,7 +1050,7 @@ namespace bce {
                 if (!_0x) {
                   Q[i][3].push_back(s1 - offset[1] + 1, _x0, _x1);
                   offset[1] = s1;
-                  if (!mode) ranks[i].set(s + _x0, s1 + _x0);
+                  if (!mode) rank_.set(s + _x0, s1 + _x0);
                   continue;
                 }
 
@@ -1054,7 +1066,7 @@ namespace bce {
 
                 if (max != min) {
                   if (mode) {
-                    _0x0 = ranks[i].template get<0>(s + _x0) - s0;
+                    _0x0 = rank::template get_<0>(d, s + _x0) - s0;
                     coder_[i].set(_0x0 - min, max - min + 1, _0x, _x0, _x);
                   } else {
                     _0x0 = min + coder_[i].get(max - min + 1, _0x, _x0, _x);
@@ -1068,14 +1080,14 @@ namespace bce {
                   offset[0] = s0;
                 }
 
-                auto _1x1 = _x1 - _0x1;
-                auto _1x0 = _1x - _1x1;
+                auto _1x0 = _x0 - _0x0;
+                auto _1x1 = _1x - _1x0;
                 if (_1x0 && _1x1) {
                   Q[i][3].push_back(s1 - offset[1] + 1, _1x0, _1x1);
                   offset[1] = s1;
                 }
 
-                if (!mode) ranks[i].set(s + _x0, s1 + _1x0);
+                if (!mode) rank_.set(s + _x0, s1 + _1x0);
               }
             }
           }
