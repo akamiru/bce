@@ -123,7 +123,7 @@ namespace builtin {
 
     return first + i;
   }
-  
+
   template<class rank, class ForwardIt>
   std::array<rank, 8> to_dictionary(ForwardIt first, ForwardIt last) {
     std::array<rank, 8> ranks;
@@ -133,8 +133,8 @@ namespace builtin {
     std::array<uint32_t, 256> C;
     C.fill(0);
 
-    for (std::ptrdiff_t i = 0; i < last - first; ++i)
-      C[first[i] | 0x80]++;
+    for (auto i = first; i < last; ++i)
+      C[*i | 0x80]++;
 
     for (uint32_t i = 0x80; i < 0x100; ++i)
       for (uint32_t j = 1; j < 8; ++j)
@@ -148,16 +148,26 @@ namespace builtin {
       }
     }
 
-    for (std::ptrdiff_t i = 0; i < last - first; ++i) {
-      auto chr = first[i];
+#ifdef _OPENMP
+    #pragma omp parallel for firstprivate(C)
+    for (int j = 0; j < 8; ++j) {
+      for (auto i = first; i < last; ++i) {
+        auto chr = *i;
+        auto c = (chr & ((1 << j) - 1)) | (1 << j);
+        ranks[j].set_bit(C[c]++, (chr >> j) & 1);
+      }
+      ranks[j].build();
+    }
+#else
+    for (auto i = first; i < last; ++i) {
+      auto chr = *i;
       for (int j = 0; j < 8; ++j) {
         auto c = (chr & ((1 << j) - 1)) | (1 << j);
         ranks[j].set_bit(C[c]++, (chr >> j) & 1);
       }
     }
-
     for (int i = 0; i < 8; ++i) ranks[i].build();
-
+#endif
     return ranks;
   }
 }}  // bce::builtins
