@@ -18,6 +18,7 @@
 
 #include "bce.h"
 
+#include <cstdint>
 #include <chrono>
 #include <algorithm>
 
@@ -33,7 +34,7 @@ int compress(std::string archive_name, std::string file_name) {
   std::ifstream file(file_name, std::ios::binary | std::ios::ate);
 
   std::size_t size = file.tellg();
-  if (size == -1lu) return -1;
+  if (size == static_cast<decltype(size)>(-1)) return -1;
   file.seekg(0, std::ios::beg);
 
   std::ofstream archive(archive_name, std::ios::binary | std::ios::trunc);
@@ -79,7 +80,7 @@ int decompress(std::string file_name, std::string archive_name) {
   std::ifstream archive(archive_name, std::ios::binary | std::ios::ate);
 
   std::size_t size = archive.tellg();
-  if (size == -1lu) return -1;
+  if (size == static_cast<decltype(size)>(-1)) return -1;
   archive.seekg(0, std::ios::beg);
 
   std::ofstream file(file_name, std::ios::binary | std::ios::trunc);
