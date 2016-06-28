@@ -63,8 +63,8 @@ namespace bce {
         template<int S>
         static uint32_t get_(const uint64_t* rank_, uint32_t index) {
           if (S == 0) return index - get_<1>(rank_, index);
-          auto rank = rank_[index / 32] & (UINT64_C(-1) >> (32 - index % 32));
-          return rank + builtin::cnt(rank >> 32);
+          auto rank = rank_[index / 32] & (~UINT64_C(0) >> (32 - index % 32));
+          return static_cast<uint32_t>(rank + builtin::cnt(rank >> 32));
         }
 
         template<int S>
@@ -92,7 +92,7 @@ namespace bce {
             n = o;
           }
 
-          auto m0 = UINT64_C(-1) << (32 + o);
+          auto m0 = ~UINT64_C(0) << (32 + o);
           auto m1 = UINT64_C( 0) + builtin::ctz(((b & m0) >> 32) | +(UINT64_C(1) << 31)  );  // get bits
           auto m2 = UINT64_C(64) - builtin::clo( (b | m0)     /* & ~(UINT64_C(1) << 31)*/);  // put bits - probably decomment for block sizes >= (1 << 31)
 
@@ -101,7 +101,7 @@ namespace bce {
 
           b += builtin::cnt(static_cast<uint32_t>(m2));
           b &= ~m1;
-          b |= m2 & (UINT64_C(-1) << 32);
+          b |= m2 & (~UINT64_C(0) << 32);
 
           rank_[i] = b;
 
@@ -125,8 +125,8 @@ namespace bce {
           return (rank_[offset / 32] >> (offset % 32 + 32)) & 1;
         }
 
-        uint32_t set_bit(uint32_t offset, uint64_t bit) {
-          return rank_[offset / 32] |= bit << (offset % 32);
+        void set_bit(uint32_t offset, uint64_t bit) {
+          rank_[offset / 32] |= bit << (offset % 32);
         }
 
         uint32_t size() {
@@ -153,7 +153,7 @@ namespace bce {
           auto index = builtin::to_lmsr(first, last);
 
           std::vector<int32_t, Allocator> SA(last - first);
-          auto i = divbwt(&*first, &*first, SA.data(), last - first - 1);
+          auto i = divbwt(&*first, &*first, SA.data(), static_cast<saidx_t>(last - first - 1));
 
           std::rotate(first + i, last - 1, last);
           return index;
@@ -336,9 +336,9 @@ namespace bce {
 
             explicit iterator(vit it) : it_(std::move(it)), cur_(0) {}
 
-            uint64_t operator*() const {
+            uint32_t operator*() const {
               auto val = *it_ << cur_;
-              return val >> (63 - 2 * builtin::clz(val));
+              return static_cast<uint32_t>(val >> (63 - 2 * builtin::clz(val)));
             }
 
             iterator& operator++() {
@@ -410,7 +410,7 @@ namespace bce {
     template<class Allocator = std::allocator<uint32_t>>
     class vector : public std::vector<uint32_t, Allocator> {
      public:
-        using pvector = std::vector<uint32_t>;
+        using pvector = std::vector<uint32_t, Allocator>;
 
         using pvector::push_back;
         void push_back(uint32_t a, uint32_t b) {
@@ -447,10 +447,10 @@ namespace bce {
         static constexpr const int bitsS = sizeof(state_type) * CHAR_BIT; // state bits
         static constexpr const int bitsE = sizeof(element_type) * CHAR_BIT; // element bits
 
-        arithmetic(int i) : l_{0}, h_{UINT64_C(-1)} { (void) i; }
+        arithmetic(int i) : l_{0}, h_{~UINT64_C(0)} { (void) i; }
 
         arithmetic(int i, element_type* first, element_type* last):
-          l_{0}, h_{UINT64_C(-1)}, cur_{first}, last_{last} {
+          l_{0}, h_{~UINT64_C(0)}, cur_{first}, last_{last} {
           (void) i;
           for (std::size_t i = 0; i < bitsS / bitsE; i++)
             m_ = (m_ << bitsE) + ((cur_ < last_) ? *cur_++ : 0);
@@ -472,9 +472,9 @@ namespace bce {
           if (builtin::unlikely(h_ - l_ <= k)) {
             auto m_ = (l_ >> 1) + (h_ >> 1) + (h_ & l_ & 1);
             for (std::size_t i = 0; i < bitsS / bitsE; ++i)
-              data_.push_back(m_ >> (bitsS - bitsE * (i + 1)));
+              data_.push_back(static_cast<element_type>(m_ >> (bitsS - bitsE * (i + 1))));
             l_ = 0;
-            h_ = UINT64_C(-1);
+            h_ = ~UINT64_C(0);
           }
 
           auto step = (h_ - l_) / k;
@@ -498,11 +498,11 @@ namespace bce {
             for (std::size_t i = 0; i < bitsS / bitsE; ++i)
               m_ = (m_ << bitsE) + ((cur_ < last_) ? *cur_++ : 0);
             l_ = 0;
-            h_ = UINT64_C(-1);
+            h_ = ~UINT64_C(0);
           }
 
           auto step = (h_ - l_) / k;
-          auto s    = (m_ - l_) / step;
+          auto s    = static_cast<uint32_t>((m_ - l_) / step);
 
           l_ += step * s;
           h_  = step + l_ - 1;
@@ -515,7 +515,7 @@ namespace bce {
           auto bits = builtin::clz(h_ - l_) + 2;
           l_ = ((l_ >> (bitsS - bits)) + 1) << (bitsS - bits);
           while (l_) {
-            data_.push_back(l_ >> (bitsS - bitsE));
+            data_.push_back(static_cast<element_type>(l_ >> (bitsS - bitsE)));
             l_ <<= bitsE;
             cur_++;
           }
@@ -542,7 +542,7 @@ namespace bce {
           data_.shrink_to_fit();
 
           l_ = 0;
-          h_ = UINT64_C(-1);
+          h_ = ~UINT64_C(0);
         }
 
         // reset this coder for reuse (doesn't reset the stats)
@@ -551,7 +551,7 @@ namespace bce {
           data_.shrink_to_fit();
 
           l_ = m_ = 0;
-          h_ = UINT64_C(-1);
+          h_ = ~UINT64_C(0);
           cur_ = first;
           last_ = last;
 
@@ -574,7 +574,7 @@ namespace bce {
         void shift_out() {
           // @todo fix it
           while (!((h_ ^ l_ ) >> (bitsS - bitsE))) {
-            data_.push_back(h_ >> (bitsS - bitsE));
+            data_.push_back(static_cast<element_type>(h_ >> (bitsS - bitsE)));
             l_ = (l_ << bitsE) +  static_cast<element_type>(0);
             h_ = (h_ << bitsE) + ~static_cast<element_type>(0);
           }
@@ -637,15 +637,15 @@ namespace bce {
           auto* ctx = get_context(k, c1, c2, cs);
 
           state_type n = s;
-          for (int i = 0; i < s; ++i) n += ctx[i];
+          for (uint32_t i = 0; i < s; ++i) n += ctx[i];
           state_type l = n - s + k;
-          for (int i = s; i < k; ++i) l += ctx[i];
+          for (uint32_t i = s; i < k; ++i) l += ctx[i];
 
           if (builtin::unlikely(h_ - l_ < l)) {
             for (std::size_t i = 0; i < bitsS / bitsE; ++i)
-              data_.push_back(l_ >> (bitsS - bitsE * (i + 1)));
+              data_.push_back(static_cast<element_type>(l_ >> (bitsS - bitsE * (i + 1))));
             l_ = 0;
-            h_ = UINT64_C(-1);
+            h_ = ~UINT64_C(0);
           }
 
           auto step = (h_ - l_) / l;
@@ -674,13 +674,13 @@ namespace bce {
             for (std::size_t i = 0; i < bitsS / bitsE; ++i)
               m_ = (m_ << bitsE) + ((cur_ < last_) ? *cur_++ : 0);
             l_ = 0;
-            h_ = UINT64_C(-1);
+            h_ = ~UINT64_C(0);
           }
 
           auto step = (h_ - l_) / l;
 
           h_ = l_ - 1;
-          uint32_t s = UINT32_C(-1);
+          uint32_t s = ~UINT32_C(0);
           do {
             ++s;
             l_ = h_ + 1;
@@ -894,7 +894,7 @@ namespace bce {
 
         auto offset = this->transform(first, last);
 
-        auto n = last - first;
+        auto n = static_cast<uint32_t>(last - first);
         auto ranks = builtin::to_dictionary<rank>(first, last);
 
         std::array<uint32_t, 8> C;
@@ -906,21 +906,21 @@ namespace bce {
         code<1, queue>(n, ranks, C);
 
         uint32_t size = 0;
-        for (auto& c : coder_) size += c.flush().size();
+        for (auto& c : coder_) size += static_cast<uint32_t>(c.flush().size());
 
         // Build the header data
         coder main(-1);
         main.setv(n);
         main.setv(size);
-        main.set(offset - first, n); // offset must not be n
+        main.set(static_cast<uint32_t>(offset - first), n); // offset must not be n
 
         for (uint32_t s = size, i = 0; i < 7; ++i) {
-          main.set(coder_[i].data().size(), s + 1);
-          s -= coder_[i].data().size();
+          main.set(static_cast<uint32_t>(coder_[i].data().size()), s + 1);
+          s -= static_cast<uint32_t>(coder_[i].data().size());
         }
         main.flush();
 
-        size += main.data().size();
+        size += static_cast<uint32_t>(main.data().size());
         if (*t_last < t_first + size) {
           *t_last = t_first + size;
           return -2;
