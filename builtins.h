@@ -30,7 +30,7 @@ namespace builtin {
     return value;
   }
 
-  inline constexpr uint64_t clz(uint64_t val) {
+  inline uint32_t clz(uint64_t val) {
     unsigned long r = 0;
 #if defined(_M_AMD64) || defined(_M_X64) || defined(_M_ARM)
     if (_BitScanReverse64(&r, val))
@@ -44,7 +44,7 @@ namespace builtin {
     return 64;
   }
 
-  inline constexpr uint64_t ctz(uint64_t val) {
+  inline uint32_t ctz(uint64_t val) {
     unsigned long r = 0;
 #if defined(_M_AMD64) || defined(_M_X64) || defined(_M_ARM)
     if (_BitScanForward64(&r, val))
@@ -58,7 +58,7 @@ namespace builtin {
     return 64;
   }
 
-  inline constexpr uint64_t cnt(uint64_t val) {
+  inline uint32_t cnt(uint64_t val) {
     // https://en.wikipedia.org/wiki/Hamming_weight
     const uint64_t m1 = 0x5555555555555555;
     const uint64_t m2 = 0x3333333333333333;
@@ -75,29 +75,29 @@ namespace builtin {
     return __builtin_expect(value, 0);
   }
 
-  inline constexpr uint64_t clz(uint64_t val) {
+  inline constexpr uint32_t clz(uint64_t val) {
     return sizeof(unsigned long) == 8 ? __builtin_clzl(val) :  __builtin_clzll(val);
   }
 
-  inline constexpr uint64_t ctz(uint64_t val) {
+  inline constexpr uint32_t ctz(uint64_t val) {
     return sizeof(unsigned long) == 8 ? __builtin_ctzl(val) : __builtin_ctzll(val);
   }
 
-  inline constexpr uint64_t cnt(uint64_t val) {
+  inline constexpr uint32_t cnt(uint64_t val) {
     return sizeof(unsigned long) == 8 ? __builtin_popcountl(val) : __builtin_popcountll(val);
   }
 #endif
-  inline constexpr uint64_t clo(uint64_t val) {
+  inline uint32_t clo(uint64_t val) {
     return clz(~val);
   }
 
-  inline constexpr uint64_t cto(uint64_t val) {
+  inline uint32_t cto(uint64_t val) {
     return ctz(~val);
   }
 
   template<class ForwardIt>
   ForwardIt to_lmsr(ForwardIt first, ForwardIt last) {
-    auto size = last - first;
+    auto size = static_cast<uint32_t>(last - first);
     auto mod = [size](auto i) {
       while (bce::builtin::unlikely(i >= size)) i -= size;
       return i;
@@ -128,7 +128,7 @@ namespace builtin {
   std::array<rank, 8> to_dictionary(ForwardIt first, ForwardIt last) {
     std::array<rank, 8> ranks;
     for (int i = 0; i < 8; ++i)
-      ranks[i] = rank(last - first);
+      ranks[i] = rank(static_cast<uint32_t>(last - first));
 
     std::array<uint32_t, 256> C;
     C.fill(0);
