@@ -1,4 +1,4 @@
-**BCE v0.4 Release**
+**BCE v0.4.1 Release**
 
 Copyright (C) 2016  Christoph Diegelmann
 
