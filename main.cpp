@@ -58,9 +58,6 @@ int compress(std::string archive_name, std::string file_name) {
             bce::queue::packed<>
           >(map.begin(), map.begin() + block_size, map.begin(), &t_last) < -2) {
       return -3;
-      // not enough memory to store the result
-      // better error reporting will follow
-      map.resize(t_last - map.begin());
     }
 
     archive.write(reinterpret_cast<const char*>(map.data()), t_last - map.begin());
