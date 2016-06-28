@@ -27,7 +27,6 @@
 #include <cstdio>
 
 #include <algorithm>
-#include <boost/math/distributions/hypergeometric.hpp>
 #include <fstream>
 #include <numeric>
 
