@@ -75,8 +75,8 @@ namespace bce {
 
         uint64_t* data() { return rank_.data(); }
 
-        void set(uint32_t _x, uint32_t value) {
-          auto n = value - get<1>(_x);
+        static void set_(uint64_t* rank_, uint32_t _x, uint32_t value) {
+          auto n = value - get_<1>(rank_, _x);
           if (n == 0) return;
           assert (n < (UINT64_C(1) << 32));
 
@@ -107,6 +107,10 @@ namespace bce {
           rank_[i] = b;
 
           assert(value == get<1>(_x));
+        }
+
+        void set(uint32_t _x, uint32_t value) {
+          set_(rank_.data(), _x, value);
         }
 
         void finalize() {
@@ -387,7 +391,10 @@ namespace bce {
           pos_ = 64;
 
           data_.clear();
-          data_.shrink_to_fit();
+          if (data_.capacity() > 1024) {
+            data_.shrink_to_fit();
+            data_.reserve(1024);
+          }
         }
 
         bool empty() {
@@ -420,7 +427,10 @@ namespace bce {
 
         void clear() {
           pvector::clear();
-          pvector::shrink_to_fit();
+          if (pvector::capacity() > 2048) {
+            pvector::shrink_to_fit();
+            pvector::reserve(2048);
+          }
         }
     };
   }
@@ -622,15 +632,17 @@ namespace bce {
         void set(uint32_t s, uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
           if (k > adaptive::max) {
             set(s & 1, 2);
-            return set(s >> 1, (k + (~s & 1)) >> 1, c1 >> 1, c2 >> 1, cs >> 1);
+            return set(s >> 1, (k + (~s & 1)) >> 1, c1, c2, cs);
           }
 
           auto* ctx = get_context(k, c1, c2, cs);
 
-          state_type n = std::accumulate(ctx, ctx + s, s);
-          state_type l = std::accumulate(ctx + s, ctx + k, n - s + k);
+          state_type n = s;
+          for (int i = 0; i < s; ++i) n += ctx[i];
+          state_type l = n - s + k;
+          for (int i = s; i < k; ++i) l += ctx[i];
 
-          if (builtin::unlikely(arithmetic<Allocator>::h_ - arithmetic<Allocator>::l_ < l)) {
+          if (builtin::unlikely(h_ - l_ < l)) {
             for (std::size_t i = 0; i < bitsS / bitsE; ++i)
               data_.push_back(l_ >> (bitsS - bitsE * (i + 1)));
             l_ = 0;
@@ -989,10 +1001,8 @@ namespace bce {
 
         code<0, queue>(n, ranks, C);
 
-        for (int i = 0; i < 8; ++i) {
-          ranks[i].finalize();
-          coder_[i].reset();
-        }
+        for (int i = 0; i < 8; ++i) coder_[i].reset();
+        for (int i = 0; i < 8; ++i) ranks[i].finalize();
 
         this->inverse(ranks, offset, t_first, n);
 
@@ -1042,7 +1052,7 @@ namespace bce {
                 if (!_1x) {
                   Q[i][2].push_back(s0 - offset[0] + 1, _x0, _x1);
                   offset[0] = s0;
-                  if (!mode) rank_.set(s + _x0, s1 + 0);
+                  if (!mode) rank::set_(d, s + _x0, s1 + 0);
                   continue;
                 }
 
@@ -1050,7 +1060,7 @@ namespace bce {
                 if (!_0x) {
                   Q[i][3].push_back(s1 - offset[1] + 1, _x0, _x1);
                   offset[1] = s1;
-                  if (!mode) rank_.set(s + _x0, s1 + _x0);
+                  if (!mode) rank::set_(d, s + _x0, s1 + _x0);
                   continue;
                 }
 
@@ -1087,7 +1097,7 @@ namespace bce {
                   offset[1] = s1;
                 }
 
-                if (!mode) rank_.set(s + _x0, s1 + _1x0);
+                if (!mode) rank::set_(d, s + _x0, s1 + _1x0);
               }
             }
           }
