@@ -105,7 +105,7 @@ namespace bce {
 
           rank_[i] = b;
 
-          assert(value == get<1>(_x));
+          assert(value == get_<1>(rank_, _x));
         }
 
         void set(uint32_t _x, uint32_t value) {
@@ -449,7 +449,7 @@ namespace bce {
 
         arithmetic(int i) : l_{0}, h_{~UINT64_C(0)} { (void) i; }
 
-        arithmetic(int i, element_type* first, element_type* last):
+        arithmetic(int i, const element_type* first, const element_type* last):
           l_{0}, h_{~UINT64_C(0)}, cur_{first}, last_{last} {
           (void) i;
           for (std::size_t i = 0; i < bitsS / bitsE; i++)
@@ -526,7 +526,7 @@ namespace bce {
         }
 
         const value_type& data() const  { return data_; }
-        element_type* cur() const { return cur_ - bitsS / bitsE; };
+        const element_type* cur() const { return cur_ - bitsS / bitsE; };
 
         void clear() {
           data_.clear();
@@ -546,7 +546,7 @@ namespace bce {
         }
 
         // reset this coder for reuse (doesn't reset the stats)
-        void reset(element_type* first, element_type* last) {
+        void reset(const element_type* first, const element_type* last) {
           data_.clear();
           data_.shrink_to_fit();
 
@@ -562,14 +562,11 @@ namespace bce {
         static void load_config(std::string file) { (void) file; }
 
      protected:
-        state_type l_;
-        state_type h_;
-        state_type m_;
-
         value_type data_;
-        element_type* cur_;
-        element_type* last_;
         std::vector<uint8_t, Allocator> stat_;
+
+        state_type l_, h_, m_;
+        const element_type *cur_, *last_;
 
         void shift_out() {
           // @todo fix it
@@ -612,7 +609,8 @@ namespace bce {
     template<int L, class Allocator = std::allocator<uint8_t>>
     class adaptive : public arithmetic<Allocator> {
      public:
-       using typename arithmetic<Allocator>::state_type;
+        using typename arithmetic<Allocator>::state_type;
+        using typename arithmetic<Allocator>::element_type;
         // maximum value for range that will be adaptivly encoded without further splitting
         static constexpr const int max = L;
         using arithmetic<Allocator>::bitsS;
@@ -622,7 +620,7 @@ namespace bce {
           init(1, i);
         }
 
-        adaptive(int i, typename arithmetic<Allocator>::element_type* first, typename arithmetic<Allocator>::element_type* last):
+        adaptive(int i, const element_type* first, const element_type* last):
           arithmetic<Allocator>(i, first, last) {
           init(0, i);
         }
@@ -714,13 +712,12 @@ namespace bce {
         }
 
      private:
-        using arithmetic<Allocator>::l_;
-        using arithmetic<Allocator>::h_;
-        using arithmetic<Allocator>::m_;
-        using arithmetic<Allocator>::data_;
-        using arithmetic<Allocator>::cur_;
-        using arithmetic<Allocator>::last_;
-        using arithmetic<Allocator>::stat_;
+        using A = arithmetic<Allocator>;
+
+        using A::data_;
+        using A::stat_;
+        using A::l_;   using A::h_;    using A::m_;
+        using A::cur_; using A::last_;
         std::array<uint32_t, L + 1> off_;
 
         static std::array<std::array<uint8_t, L + 1>, 8> init_;
@@ -779,13 +776,13 @@ namespace bce {
     template<int L, class Allocator = std::allocator<uint8_t>>
     class scan : public arithmetic<Allocator> {
      public:
+        using typename arithmetic<Allocator>::element_type;
         // maximum value for range that will be adaptivly encoded without further splitting
         static constexpr const int max = L;
-        using element_type = typename arithmetic<Allocator>::element_type;
 
         scan(int i): arithmetic<Allocator>{i}, z_(0), i_{i < 0 || i > 7 ? 8 : i}  {}
 
-        scan(int i, element_type* first, element_type* last) = delete; // not a decoder
+        scan(int i, const element_type* first, const element_type* last) = delete; // not a decoder
 
         using arithmetic<Allocator>::set;
         void set(uint32_t s, uint32_t k, uint32_t c1, uint32_t c2, uint32_t cs) {
@@ -1073,15 +1070,13 @@ namespace bce {
                 // Encode/Decode
                 uint32_t _0x0 = min;
 
-                if (max != min) {
-                  if (mode) {
-                    _0x0 = rank::template get_<0>(d, s + _x0) - s0;
-                    coder_[i].set(_0x0 - min, max - min + 1, _0x, _x0, _x);
-                  } else {
-                    _0x0 = min + coder_[i].get(max - min + 1, _0x, _x0, _x);
-                  }
-                  assert(min <= _0x0 && _0x0 <= max);
+                if (mode) {
+                  _0x0 = rank::template get_<0>(d, s + _x0) - s0;
+                  coder_[i].set(_0x0 - min, max - min + 1, _0x, _x0, _x);
+                } else {
+                  _0x0 = min + coder_[i].get(max - min + 1, _0x, _x0, _x);
                 }
+                assert(min <= _0x0 && _0x0 <= max);
 
                 auto _0x1 = _0x - _0x0;
                 if (_0x0 && _0x1) {
