@@ -142,7 +142,7 @@ int decompress(std::string file_name, std::string archive_name) {
 int main(int argc, char** argv) {
   printf("BCE v0.4.1 Release\n");
   printf("Copyright (C) 2016  Christoph Diegelmann\n");
-  printf("This is free software under GNU Lesser General Public License. See <http://www.gnu.org/licenses/lgpl>\n\n");
+  printf("This is free software under MIT License. See <https://opensource.org/licenses/MIT>\n\n");
 
   if (argc == 4 && argv[1][0] == '-') {
     if (argv[1][1] == 'c')
