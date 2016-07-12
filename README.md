@@ -2,7 +2,7 @@
 
 Copyright (C) 2016  Christoph Diegelmann
 
-This is free software under GNU Lesser General Public License. See <http://www.gnu.org/licenses/lgpl>
+This is free software under MIT License.
 
 BCE is a compressor for stationary data. It uses an algorithm described at http://encode.ru/threads/2150-A-new-algorithm-for-compression-using-order-n-models.
 
