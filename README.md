@@ -6,6 +6,8 @@ This is free software under MIT License. See https://opensource.org/licenses/MIT
 
 BCE is a compressor for stationary data. It uses an algorithm described at http://encode.ru/threads/2150-A-new-algorithm-for-compression-using-order-n-models.
 
+The algorithm is also known as Compression by Substring Enumeration (CSE) in literature.
+
 **Usage:**
 
     bce -c archive.bce file
