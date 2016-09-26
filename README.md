@@ -21,7 +21,7 @@ The algorithm is also known as Compression by Substring Enumeration (CSE) in lit
 
 **Building:**
 
-    mk build
+    mkdir build
     cd build
     cmake -DCMAKE_BUILD_TYPE=Release ..
     make
