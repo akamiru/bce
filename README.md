@@ -25,4 +25,4 @@ The algorithm is also known as Compression by Substring Enumeration (CSE) in lit
 
 **Dependings:**
 
-    libdivsufsort - See https://github.com/y-256/libdivsufsort
+  libdivsufsort - See https://github.com/akamiru/libdivsufsort
